@@ -18,7 +18,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--to", required=True, help="number to call, e.g. +15551234567")
     parser.add_argument("--wav", required=True, help="path to the WAV file to play")
-    parser.add_argument("--server", default="sip.goto.com")
+    parser.add_argument("--server", default="reg.jiveip.net")
     parser.add_argument("--proxy", help="outbound proxy host (connection target; --server stays in URIs)")
     parser.add_argument("--transport", choices=["udp", "tls"], default="udp")
     parser.add_argument("--verbose", action="store_true", help="log SIP start-lines and call state (no secrets)")

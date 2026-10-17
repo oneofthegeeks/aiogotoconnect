@@ -297,7 +297,7 @@ class _Call:
 
 
 class GoToVoice:
-    def __init__(self, username: str, password: str, server: str = "sip.goto.com",
+    def __init__(self, username: str, password: str, server: str = "reg.jiveip.net",
                  proxy: str | None = None, transport: str = "udp", port: int | None = None,
                  ssl_context: ssl.SSLContext | None = None) -> None:
         self.username, self.password, self.server = username, password, server

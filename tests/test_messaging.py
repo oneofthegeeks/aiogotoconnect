@@ -125,6 +125,26 @@ async def test_timeout_raises_gotoerror(aiohttp_server):
     assert isinstance(caught.value.__cause__, (asyncio.TimeoutError, aiohttp.ServerTimeoutError))
 
 
+@pytest.mark.parametrize(
+    "body, content_type",
+    [
+        ("", "application/json"),  # empty 200 body
+        ("", "text/plain"),  # empty body, wrong content type
+        ("accepted", "text/plain"),  # non-JSON 200 body
+    ],
+)
+async def test_empty_or_non_json_success_body_returns_empty_dict(aiohttp_server, body, content_type):
+    async def handler(request: web.Request) -> web.Response:
+        return web.Response(text=body, status=200, content_type=content_type)
+
+    app = web.Application()
+    app.router.add_post("/messaging/v1/messages", handler)
+    server = await aiohttp_server(app)
+    client = GoToMessaging(static_token, base_url=str(server.make_url("")).rstrip("/"))
+
+    assert await client.async_send_sms(OWNER, CONTACTS, "hello") == {}
+
+
 async def test_owner_equal_to_contact_fails_fast_without_request(aiohttp_server):
     calls: list = []
     server = await aiohttp_server(sms_app(calls))

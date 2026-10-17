@@ -41,6 +41,11 @@ class GoToMessaging:
                 # Error text is deliberately not included: it could echo phone numbers or tokens.
                 if response.status >= 400:
                     raise GoToApiError(f"SMS send failed with HTTP {response.status}", response.status)
-                return await response.json()
+                # Success with no usable body is still success: GoTo returns JSON, but don't rely on it.
+                try:
+                    parsed = await response.json(content_type=None)
+                except ValueError:  # JSONDecodeError: body was not JSON
+                    return {}
+                return {} if parsed is None else parsed  # aiohttp yields None for an empty body
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
             raise GoToError("SMS send request failed") from error

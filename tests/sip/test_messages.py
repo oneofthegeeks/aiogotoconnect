@@ -119,3 +119,28 @@ def test_digest_no_qop():
 def test_digest_unsupported_algorithm():
     with pytest.raises(GoToSipError):
         digest_response('Digest realm="r", nonce="n", algorithm=SHA-256', "GET", "/", "u", "p")
+
+
+@pytest.mark.parametrize("build", [build_invite, build_ack, build_bye, build_cancel])
+@pytest.mark.parametrize("bad", ["123\r\nX-Evil: 1", "abc", "", "1" * 33])
+def test_bad_to_number_rejected(build, bad):
+    extra = {"media_port": 4000} if build is build_invite else {}
+    extra |= {"branch": "z9hG4bKx"} if build is build_cancel else {}
+    with pytest.raises(ValueError):
+        build(**ARGS, to_number=bad, dialog=SipDialog(), **extra)
+
+
+def test_control_char_in_other_values_rejected():
+    d = SipDialog()
+    with pytest.raises(GoToSipError):
+        build_register(**ARGS, dialog=d, auth_header="Authorization: x\r\nX-Evil: 1")
+    with pytest.raises(GoToSipError):
+        build_bye(**ARGS, to_number="123", dialog=d, to_tag="t\nx")
+    with pytest.raises(GoToSipError):
+        build_register(**{**ARGS, "username": "u\r\nX: 1"}, dialog=d)
+
+
+@pytest.mark.parametrize("ch", ['Digest nonce="n"', 'Digest realm="r"', "garbage"])
+def test_malformed_challenge_raises_siperror(ch):
+    with pytest.raises(GoToSipError):
+        digest_response(ch, "GET", "/", "u", "p")

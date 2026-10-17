@@ -3,7 +3,7 @@ class GoToError(Exception):
 
 
 class GoToAuthError(GoToError):
-    """OAuth token refresh failed."""
+    """Credentials were rejected: OAuth token refresh failed, SIP digest credentials refused, or SMS got a 401."""
 
 
 class GoToApiError(GoToError):

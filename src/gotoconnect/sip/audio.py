@@ -33,6 +33,8 @@ def wav_to_g711(wav_bytes: bytes, codec: str = "pcma") -> bytes:
     except (wave.Error, EOFError) as exc:
         raise ValueError(f"input is not a readable PCM WAV: {exc}") from exc
 
+    if not frames:
+        raise ValueError("WAV contains no audio frames")  # would otherwise 'play' a silent call
     if channels > 2:
         # ponytail: stereo downmix only, multichannel needs a per-channel mixer.
         raise ValueError(f"unsupported channel count: {channels}")

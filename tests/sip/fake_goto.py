@@ -16,9 +16,11 @@ import re
 import secrets
 
 REALM = "goto.test"
-BEHAVIORS = {"answer", "busy", "no_answer", "hangup_during_audio", "reject_auth"}
+BEHAVIORS = {"answer", "busy", "no_answer", "hangup_during_audio", "reject_auth",
+             "answer_after_cancel",  # the 200 races the CANCEL: sent right after the CANCEL's 200
+             "invite_unauth"}  # REGISTER works but the INVITE is challenged forever
 REASONS = {
-    100: "Trying", 180: "Ringing", 200: "OK", 407: "Proxy Authentication Required",
+    100: "Trying", 401: "Unauthorized", 180: "Ringing", 200: "OK", 407: "Proxy Authentication Required",
     400: "Bad Request", 481: "Call/Transaction Does Not Exist",
     486: "Busy Here", 487: "Request Terminated",
 }
@@ -90,8 +92,21 @@ class _Rtp(asyncio.DatagramProtocol):
 
 
 class FakeGoToServer:
-    def __init__(self, username: str, password: str, behavior: str = "answer", ssl_context=None):
+    def __init__(self, username: str, password: str, behavior: str = "answer", ssl_context=None, *,
+                 drop_first: int = 0, challenge_401: bool = False, record_route=(),
+                 resend_200: bool = False, bye_reply: int | None = 200):
+        """Options: drop_first = ignore the first N incoming requests (lossy link); challenge_401 =
+        challenge with 401/WWW-Authenticate instead of 407; record_route = Record-Route values put
+        on the 200 (ACK/BYE must then carry them as Route in reverse); resend_200 = send the 200
+        twice (lost ACK); bye_reply = status for the client's BYE (None = stay silent)."""
         assert behavior in BEHAVIORS, behavior
+        self._drop_first, self._challenge_401, self._record_route = drop_first, challenge_401, list(record_route)
+        self._resend_200, self._bye_reply = resend_200, bye_reply
+        self.ack_count = 0  # valid ACKs for the answered INVITE
+        self.challenge_acks = 0  # ACKs for our 407/401 challenges
+        self._challenge_tags: set[str] = set()
+        self._final_code = 0
+        self._port = 0
         self._ssl_context = ssl_context  # server-side context -> SIP over TLS
         self._tls_server = None
         self.username, self.password, self.behavior = username, password, behavior
@@ -123,6 +138,7 @@ class FakeGoToServer:
             self._sip, _ = await loop.create_datagram_endpoint(lambda: _Sip(self), local_addr=(self._host, 0))
             port = self._sip.get_extra_info("sockname")[1]
         self._contact = f"sip:svc@{self._host}:{port}"
+        self._port = port
         return self._host, port
 
     async def stop(self):
@@ -178,16 +194,20 @@ class FakeGoToServer:
     def _challenge(self, req: _Msg, addr):
         nonce = secrets.token_hex(8)
         self._nonces[nonce] = (req.method, req.get("Call-ID"))
-        self._respond(req, 407, addr, [f'Proxy-Authenticate: Digest realm="{REALM}", nonce="{nonce}", qop="auth"'])
+        tag = secrets.token_hex(4)
+        self._challenge_tags.add(tag)
+        code, header = (401, "WWW-Authenticate") if self._challenge_401 else (407, "Proxy-Authenticate")
+        self._respond(req, code, addr, [f'{header}: Digest realm="{REALM}", nonce="{nonce}", qop="auth"'], tag=tag)
 
     def _final_invite(self, code: int, extra=(), body="", addr=None):
         self._invite_final = True
+        self._final_code = code
         self._respond(self._invite, code, addr or self._invite_addr, extra, body, tag=self._dialog_tag)
 
     # ---- digest (own implementation) ------------------------------------------
 
     def _auth_ok(self, req: _Msg) -> bool:
-        hdr = req.get("Proxy-Authorization")
+        hdr = req.get("Authorization" if self._challenge_401 else "Proxy-Authorization")
         if not hdr.lower().startswith("digest ") or self.behavior == "reject_auth":
             return False
         p = {k.lower(): v1 or v2 for k, v1, v2 in re.findall(r'(\w+)=(?:"([^"]*)"|([^,\s]+))', hdr[7:])}
@@ -211,6 +231,10 @@ class FakeGoToServer:
     def _on_sip(self, msg: _Msg, addr):
         if msg.is_response:
             return  # only a 200 to our BYE is expected; nothing to do
+        if self._drop_first > 0:
+            self._drop_first -= 1
+            self.log.append(("error", f"dropped {msg.method} (drop_first)"))
+            return
         handler = getattr(self, f"_on_{msg.method.lower()}", None)
         if handler:
             handler(msg, addr)
@@ -225,7 +249,7 @@ class FakeGoToServer:
     def _on_invite(self, msg, addr):
         if self._invite is not None and msg.get("Call-ID") == self._invite.get("Call-ID"):
             return  # retransmission of the live INVITE
-        if not self._auth_ok(msg):
+        if self.behavior == "invite_unauth" or not self._auth_ok(msg):
             self._challenge(msg, addr)
             return
         self.invite_authenticated = True
@@ -264,7 +288,11 @@ class FakeGoToServer:
             f"m=audio {port} RTP/AVP {self._pt} 101\r\na=rtpmap:{self._pt} {name}/8000\r\na=rtpmap:101 telephone-event/8000\r\n"
             "a=sendrecv\r\n"
         )
-        self._final_invite(200, [f"Contact: <{self._contact}>"], sdp, addr)
+        extra = [f"Contact: <{self._contact}>", *(f"Record-Route: {r}" for r in self._record_route)]
+        self._final_invite(200, extra, sdp, addr)
+        if self._resend_200:  # as if the ACK were lost: the client must ACK again
+            await asyncio.sleep(0.3)
+            self._final_invite(200, extra, sdp, addr)
 
     def _in_dialog(self, msg) -> bool:
         return (
@@ -277,7 +305,18 @@ class FakeGoToServer:
         # Only an ACK for the authenticated INVITE's dialog counts: not the ACK to a 407,
         # and not one with a foreign Call-ID or the wrong To-tag.
         if self._in_dialog(msg) and msg.cseq[0] == self._invite.cseq[0]:
+            if self._final_code == 200:  # 2xx ACK: new transaction, to the Contact, via the route set
+                bad = (msg.uri != self._contact or _branch(msg) == _branch(self._invite)
+                       or msg.all("Route") != self._expected_routes())
+            else:  # non-2xx ACK: same transaction as the INVITE
+                bad = _branch(msg) != _branch(self._invite)
+            if bad:
+                self.log.append(("error", "ACK has the wrong branch/request-URI/Route for the final response"))
+                return
             self.got_ack = True
+            self.ack_count += 1
+        elif _tag(msg.get("To")) in self._challenge_tags:
+            self.challenge_acks += 1
         else:
             self.log.append(("error", "ACK ignored: Call-ID/To-tag/CSeq do not match the dialog"))
 
@@ -298,18 +337,28 @@ class FakeGoToServer:
             self.log.append(("error", "CANCEL after final response: no effect"))
             return
         self.got_cancel = True
-        self._final_invite(487)
+        if self.behavior == "answer_after_cancel":
+            asyncio.ensure_future(self._answer(inv, self._invite_addr))
+        else:
+            self._final_invite(487)
+
+    def _expected_routes(self) -> list[str]:
+        return list(reversed(self._record_route))
 
     def _on_bye(self, msg, addr):
         if not self._in_dialog(msg):
             self.log.append(("error", "BYE does not match the dialog (Call-ID/To-tag)"))
             self._respond(msg, 481, addr)
+        elif msg.all("Route") != self._expected_routes():
+            self.log.append(("error", "BYE lacks the Route set from our Record-Route"))
+            self._respond(msg, 400, addr)
         elif msg.uri != self._contact:
             self.log.append(("error", f"BYE request-URI {msg.uri!r} is not our Contact {self._contact!r}"))
             self._respond(msg, 400, addr)
         else:
             self.got_bye = True
-            self._respond(msg, 200, addr)
+            if self._bye_reply is not None:
+                self._respond(msg, self._bye_reply, addr)
 
     # ---- RTP ---------------------------------------------------------------------------
 
@@ -329,10 +378,11 @@ class FakeGoToServer:
             self.log.append(("error", "cannot send BYE: INVITE has no <Contact>"))
             return
         self.sent_bye = True
-        sip_port = self._sip.get_extra_info("sockname")[1]
+        via = "TLS" if self._ssl_context else "UDP"
+        sip_port = self._port
         lines = [
             f"BYE {contact.group(1)} SIP/2.0",
-            f"Via: SIP/2.0/UDP {self._host}:{sip_port};branch=z9hG4bK{secrets.token_hex(4)}",
+            f"Via: SIP/2.0/{via} {self._host}:{sip_port};branch=z9hG4bK{secrets.token_hex(4)}",
             f"From: {inv.get('To')};tag={self._dialog_tag}",
             f"To: {inv.get('From')}",
             f"Call-ID: {inv.get('Call-ID')}",

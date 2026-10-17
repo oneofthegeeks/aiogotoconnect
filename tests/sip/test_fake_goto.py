@@ -42,6 +42,8 @@ class RawClient(asyncio.DatagramProtocol):
 
     def send(self, addr, method, call_id, cseq, extra="", body="", branch=None, uri="sip:goto.test", to_tag=""):
         branch = branch or f"z9hG4bK{call_id}{cseq}"
+        if method == "ACK":  # a 2xx ACK is a new transaction sent to the Contact
+            branch, uri = f"z9hG4bKack{call_id}", f"sip:svc@{addr[0]}:{addr[1]}"
         lines = [
             f"{method} {uri} SIP/2.0",
             f"Via: SIP/2.0/UDP 127.0.0.1:5999;branch={branch}",

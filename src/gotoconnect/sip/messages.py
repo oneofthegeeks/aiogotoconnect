@@ -10,6 +10,7 @@ import hashlib
 import re
 import secrets
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from gotoconnect.exceptions import GoToSipError
@@ -59,8 +60,12 @@ class SipDialog:
         return "z9hG4bK" + secrets.token_hex(8)
 
 
-def _request(method, request_uri, dialog, username, domain, local_ip, local_port, transport,
-             to_uri, to_tag="", branch=None, cseq_method=None, extra=(), routes=(), body=""):
+def _request(method: str, request_uri: str, dialog: SipDialog, username: str, domain: str,
+             local_ip: str, local_port: int, transport: str, to_uri: str, to_tag: str = "",
+             branch: str | None = None, cseq_method: str | None = None, extra: Sequence[str] = (),
+             routes: Sequence[str] = (), body: str = "") -> bytes:
+    # Over TLS the Contact must say so, or the server sends in-dialog requests (its BYE) over UDP.
+    contact_params = ";transport=tls" if transport.upper() == "TLS" else ""
     lines = [
         f"{method} {request_uri} SIP/2.0",
         f"Via: SIP/2.0/{transport} {local_ip}:{local_port};branch={branch or dialog.branch()}",
@@ -69,7 +74,7 @@ def _request(method, request_uri, dialog, username, domain, local_ip, local_port
         f"Call-ID: {dialog.call_id}",
         f"CSeq: {dialog.cseq} {cseq_method or method}",
         *(f"Route: {r}" for r in routes),
-        f"Contact: <sip:{username}@{local_ip}:{local_port}>",
+        f"Contact: <sip:{username}@{local_ip}:{local_port}{contact_params}>",
         "Max-Forwards: 70",
         *extra,
         f"Content-Length: {len(body.encode())}",
@@ -86,8 +91,8 @@ def _check_number(to_number: str) -> str:
     return to_number
 
 
-def build_register(username, domain, local_ip, local_port, dialog, expires=60,
-                   auth_header=None, transport="UDP") -> bytes:
+def build_register(username: str, domain: str, local_ip: str, local_port: int, dialog: SipDialog,
+                   expires: int = 60, auth_header: str | None = None, transport: str = "UDP") -> bytes:
     return _request("REGISTER", f"sip:{domain}", dialog, username, domain, local_ip, local_port,
                     transport, f"sip:{username}@{domain}",
                     extra=[f"Expires: {expires}", *([auth_header] if auth_header else [])])
@@ -111,16 +116,19 @@ def _sdp(local_ip: str, media_port: int, codec: str = "pcma") -> str:
     ])
 
 
-def build_invite(username, domain, to_number, local_ip, local_port, media_port, dialog,
-                 auth_header=None, transport="UDP", codec="pcma") -> bytes:
+def build_invite(username: str, domain: str, to_number: str, local_ip: str, local_port: int,
+                 media_port: int, dialog: SipDialog, auth_header: str | None = None,
+                 transport: str = "UDP", codec: str = "pcma") -> bytes:
     uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("INVITE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     extra=[*([auth_header] if auth_header else []), "Content-Type: application/sdp"],
                     body=_sdp(local_ip, media_port, codec))
 
 
-def build_ack(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
-              routes=(), branch=None, transport="UDP", request_uri=None) -> bytes:
+def build_ack(username: str, domain: str, to_number: str, local_ip: str, local_port: int,
+              dialog: SipDialog, to_tag: str = "", routes: Sequence[str] = (),
+              branch: str | None = None, transport: str = "UDP",
+              request_uri: str | None = None) -> bytes:
     """Pass the INVITE's `branch` when ACKing a non-2xx; omit it for a 2xx ACK (new transaction).
     `request_uri` = the 200 OK's Contact URI for a 2xx ACK (RFC 3261 12.2.1.1); To stays the callee."""
     uri = f"sip:{_check_number(to_number)}@{domain}"
@@ -128,16 +136,17 @@ def build_ack(username, domain, to_number, local_ip, local_port, dialog, to_tag=
                     transport, uri, to_tag=to_tag, branch=branch, routes=routes)
 
 
-def build_bye(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
-              routes=(), transport="UDP", request_uri=None) -> bytes:
+def build_bye(username: str, domain: str, to_number: str, local_ip: str, local_port: int,
+              dialog: SipDialog, to_tag: str = "", routes: Sequence[str] = (),
+              transport: str = "UDP", request_uri: str | None = None) -> bytes:
     """`request_uri` = the 200 OK's Contact URI (in-dialog requests go to the remote target)."""
     uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("BYE", request_uri or uri, dialog, username, domain, local_ip, local_port,
                     transport, uri, to_tag=to_tag, routes=routes)
 
 
-def build_cancel(username, domain, to_number, local_ip, local_port, dialog, branch,
-                 transport="UDP") -> bytes:
+def build_cancel(username: str, domain: str, to_number: str, local_ip: str, local_port: int,
+                 dialog: SipDialog, branch: str, transport: str = "UDP") -> bytes:
     """`branch` and dialog.cseq must match the INVITE being cancelled (RFC 3261 9.1)."""
     uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("CANCEL", uri, dialog, username, domain, local_ip, local_port, transport, uri,

@@ -153,3 +153,10 @@ def test_bye_ack_request_uri_override_keeps_to_header():
         msg = build(**kw).decode()
         assert msg.split("\r\n")[0].split()[1] == "sip:svc@10.0.0.9:5070"
         assert "To: <sip:+15559876543@sip.goto.com>;tag=peer1\r\n" in msg
+
+
+def test_contact_carries_transport_tls_only_over_tls():
+    d = SipDialog()
+    kw = dict(username="u", domain="d", local_ip="1.2.3.4", local_port=5070, dialog=d)
+    assert "Contact: <sip:u@1.2.3.4:5070;transport=tls>" in build_register(**kw, transport="TLS").decode()
+    assert "Contact: <sip:u@1.2.3.4:5070>" in build_register(**kw, transport="UDP").decode()

@@ -110,6 +110,7 @@ class FakeGoToServer:
         self._sip = self._rtp = None
         self._host = "127.0.0.1"
         self._contact = ""
+        self._pt = 8  # payload type agreed in our answer: the offer's first codec (0 PCMU or 8 PCMA)
 
     async def start(self) -> tuple[str, int]:
         loop = asyncio.get_running_loop()
@@ -222,11 +223,14 @@ class FakeGoToServer:
 
     async def _answer(self, msg, addr):
         loop = asyncio.get_running_loop()
+        offered = (self.client_sdp or {}).get("codecs", [8])
+        self._pt = offered[0] if offered and offered[0] in (0, 8) else 8
+        name = "PCMU" if self._pt == 0 else "PCMA"
         self._rtp, _ = await loop.create_datagram_endpoint(lambda: _Rtp(self), local_addr=(self._host, 0))
         port = self._rtp.get_extra_info("sockname")[1]
         sdp = (
             f"v=0\r\no=- 1 1 IN IP4 {self._host}\r\ns=fake-goto\r\nc=IN IP4 {self._host}\r\nt=0 0\r\n"
-            f"m=audio {port} RTP/AVP 8 101\r\na=rtpmap:8 PCMA/8000\r\na=rtpmap:101 telephone-event/8000\r\n"
+            f"m=audio {port} RTP/AVP {self._pt} 101\r\na=rtpmap:{self._pt} {name}/8000\r\na=rtpmap:101 telephone-event/8000\r\n"
             "a=sendrecv\r\n"
         )
         self._final_invite(200, [f"Contact: <{self._contact}>"], sdp, addr)
@@ -279,8 +283,8 @@ class FakeGoToServer:
     # ---- RTP ---------------------------------------------------------------------------
 
     def _on_rtp(self, data: bytes):
-        if len(data) < 12 or data[0] >> 6 != 2 or data[1] & 0x7F != 8:
-            self.log.append(("error", f"invalid RTP packet (want v2, PT 8, >=12 bytes): {data[:12].hex()}"))
+        if len(data) < 12 or data[0] >> 6 != 2 or data[1] & 0x7F != self._pt:
+            self.log.append(("error", f"invalid RTP packet (want v2, PT {self._pt}, >=12 bytes): {data[:12].hex()}"))
             return
         self.rtp_packets.append(data)
         if self.behavior == "hangup_during_audio" and len(self.rtp_packets) == 10:

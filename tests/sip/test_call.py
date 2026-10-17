@@ -72,3 +72,29 @@ async def test_bad_password(fake):
         await voice.call_and_play("+15551234567", _wav(0.5))
     assert not server.registered
     assert sum(1 for d, t in server.log if d == "in" and t.startswith("REGISTER")) == 2
+
+
+async def test_cancellation_mid_stream_hangs_up_and_leaves_no_tasks(fake):
+    server, voice = fake
+    before = asyncio.all_tasks()
+    task = asyncio.create_task(voice.call_and_play("+15551234567", _wav(5.0)))
+    await _eventually(lambda: len(server.rtp_packets) >= 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await _eventually(lambda: server.got_bye)
+    assert asyncio.all_tasks() - before == set()
+
+
+async def test_pcmu_call_sends_payload_type_0(fake):
+    server, voice = fake
+    result = await voice.call_and_play("+15551234567", _wav(0.5), codec="pcmu")
+    assert result.reason == "completed"
+    assert server.client_sdp["codecs"][:1] == [0] and server.client_sdp["rtpmap"][0] == "PCMU/8000"
+    await _eventually(lambda: len(server.rtp_packets) >= 20)
+    assert all(p[1] & 0x7F == 0 for p in server.rtp_packets)
+
+
+async def test_unknown_codec_rejected(fake):
+    with pytest.raises(ValueError):
+        await fake[1].call_and_play("+15551234567", _wav(0.5), codec="opus")

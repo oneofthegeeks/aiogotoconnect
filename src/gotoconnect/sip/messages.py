@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from gotoconnect.exceptions import GoToSipError
 
 CRLF = "\r\n"
+# codec -> (RTP payload type, rtpmap name)
+CODEC_PAYLOADS = {"pcma": (8, "PCMA"), "pcmu": (0, "PCMU")}
 
 
 @dataclass
@@ -91,15 +93,16 @@ def build_register(username, domain, local_ip, local_port, dialog, expires=60,
                     extra=[f"Expires: {expires}", *([auth_header] if auth_header else [])])
 
 
-def _sdp(local_ip: str, media_port: int) -> str:
+def _sdp(local_ip: str, media_port: int, codec: str = "pcma") -> str:
+    pt, name = CODEC_PAYLOADS[codec]
     return CRLF.join([
         "v=0",
         f"o=- 53655765 2353687637 IN IP4 {local_ip}",
         "s=GoTo",
         f"c=IN IP4 {local_ip}",
         "t=0 0",
-        f"m=audio {media_port} RTP/AVP 8 101",
-        "a=rtpmap:8 PCMA/8000",
+        f"m=audio {media_port} RTP/AVP {pt} 101",
+        f"a=rtpmap:{pt} {name}/8000",
         "a=ptime:20",
         "a=sendrecv",
         "a=rtpmap:101 telephone-event/8000",
@@ -109,11 +112,11 @@ def _sdp(local_ip: str, media_port: int) -> str:
 
 
 def build_invite(username, domain, to_number, local_ip, local_port, media_port, dialog,
-                 auth_header=None, transport="UDP") -> bytes:
+                 auth_header=None, transport="UDP", codec="pcma") -> bytes:
     uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("INVITE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     extra=[*([auth_header] if auth_header else []), "Content-Type: application/sdp"],
-                    body=_sdp(local_ip, media_port))
+                    body=_sdp(local_ip, media_port, codec))
 
 
 def build_ack(username, domain, to_number, local_ip, local_port, dialog, to_tag="",

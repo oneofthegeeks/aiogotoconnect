@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from gotoconnect.exceptions import GoToAuthError, GoToCallError, GoToSipError
 from gotoconnect.sip.audio import wav_to_g711
 from gotoconnect.sip.messages import (
+    CODEC_PAYLOADS,
     SipDialog,
     SipResponse,
     _check_number,
@@ -115,6 +116,11 @@ class _Call:
         await self.tp.send(build_ack(to_number=self.number, dialog=dialog, to_tag=_tag_of(resp),
                                      branch=_branch_of(invite), **self.common))
 
+    def bye(self, dialog, to_tag, target) -> bytes:
+        dialog.cseq += 1
+        return build_bye(to_number=self.number, dialog=dialog, to_tag=to_tag,
+                         request_uri=target, **self.common)
+
     async def register(self) -> None:
         dialog, uri = SipDialog(), f"sip:{self.domain}"
         resp = await self.transact("REGISTER", uri, dialog, lambda auth: build_register(
@@ -123,13 +129,14 @@ class _Call:
         if resp.status != 200:
             raise GoToSipError(f"REGISTER failed: {resp.status} {resp.reason}")
 
-    async def invite(self, ring_timeout: float) -> tuple[SipDialog, SipResponse | None, bytes]:
+    async def invite(self, ring_timeout: float, codec: str) -> tuple[SipDialog, SipResponse | None, bytes]:
         """Returns (dialog, final response or None on ring timeout, last INVITE sent)."""
         dialog, sent = SipDialog(), []
 
         def build(auth):
             sent.append(build_invite(to_number=self.number, media_port=self.rtp.local_port,
-                                     dialog=dialog, auth_header=auth, **self.common))
+                                     dialog=dialog, auth_header=auth, codec=codec,
+                                     **self.common))
             return sent[-1]
 
         uri = f"sip:{self.number}@{self.domain}"
@@ -146,7 +153,7 @@ class _Call:
             return dialog, None, sent[-1]
         return dialog, resp, sent[-1]
 
-    async def play(self, payload: bytes, dest, repeat: int, stop: asyncio.Event) -> None:
+    async def play(self, payload: bytes, dest, repeat: int, stop: asyncio.Event, pt: int) -> None:
         for n in range(repeat):
             if n:
                 try:  # the inter-repeat gap, cut short by a remote hangup
@@ -155,21 +162,19 @@ class _Call:
                     pass
             if stop.is_set():
                 return
-            await self.rtp.stream(payload, dest, stop=stop)
+            await self.rtp.stream(payload, dest, payload_type=pt, stop=stop)
 
-    async def stream_until_done(self, payload: bytes, dest, repeat: int) -> bool:
+    async def stream_until_done(self, payload: bytes, dest, repeat: int, pt: int) -> bool:
         """Stream audio while watching for the server's BYE. True if the remote hung up."""
         stop = asyncio.Event()
-        play = asyncio.create_task(self.play(payload, dest, repeat, stop))
-        hung_up = False
+        play = asyncio.create_task(self.play(payload, dest, repeat, stop, pt))
+        hung_up, rx = False, None
         try:
             while not play.done():
                 rx = asyncio.create_task(self.tp.receive(3600))
                 await asyncio.wait({rx, play}, return_when=asyncio.FIRST_COMPLETED)
                 if not rx.done():
-                    rx.cancel()
-                    await asyncio.gather(rx, return_exceptions=True)
-                    break
+                    break  # audio finished; rx is reaped in finally
                 raw = rx.result()
                 if raw.startswith(b"BYE "):
                     await self.tp.send(_ok_for(raw))
@@ -179,9 +184,10 @@ class _Call:
             await play
         finally:
             stop.set()
-            if not play.done():
-                play.cancel()
-                await asyncio.gather(play, return_exceptions=True)
+            for task in (rx, play):  # also runs on outer cancellation: leave no orphan tasks
+                if task is not None and not task.done():
+                    task.cancel()
+            await asyncio.gather(*(t for t in (rx, play) if t is not None), return_exceptions=True)
         return hung_up
 
 
@@ -194,15 +200,18 @@ class GoToVoice:
     async def call_and_play(self, number: str, wav_bytes: bytes, *, ring_timeout: float = 25.0,
                             repeat: int = 1, codec: str = "pcma") -> CallResult:
         _check_number(number)  # fail before touching the network
-        payload = wav_to_g711(wav_bytes, codec)
+        payload = wav_to_g711(wav_bytes, codec)  # also rejects unknown codecs (ValueError)
+        pt = CODEC_PAYLOADS[codec][0]
         tp = make_transport(self.proxy or self.server, self.transport, self.port)
-        rtp = None
+        rtp = call = dialog = None
+        acked = bye_sent = False
+        to_tag = target = None
         await tp.connect()
         try:
             rtp = RtpSender()  # bound now so the INVITE's SDP carries the real port
             call = _Call(tp, self.transport, self.username, self.password, self.server, number, rtp)
             await call.register()
-            dialog, resp, invite = await call.invite(ring_timeout)
+            dialog, resp, invite = await call.invite(ring_timeout, codec)
             if resp is None:
                 return CallResult(False, 0.0, "no-answer")
             if resp.status in _REFUSALS:
@@ -212,26 +221,32 @@ class GoToVoice:
                 await call.ack_refusal(dialog, resp, invite)
                 raise GoToCallError(f"call failed: {resp.status} {resp.reason}")
 
-            dest = _remote_media(resp.body)
             to_tag = _tag_of(resp)
             contact = re.search(r"<([^>]+)>|(sip:\S+)", resp.get("contact", ""))
             target = (contact.group(1) or contact.group(2)) if contact else None
             started = time.monotonic()
             await tp.send(build_ack(to_number=number, dialog=dialog, to_tag=to_tag,
                                     request_uri=target, **call.common))
-            hung_up = await call.stream_until_done(payload, dest, repeat)
+            acked = True  # dialog is up: from here the finally must hang up on any failure
+            dest = _remote_media(resp.body)
+            hung_up = await call.stream_until_done(payload, dest, repeat, pt)
             duration = time.monotonic() - started
             if hung_up:
+                acked = False  # the server already ended the dialog
                 return CallResult(True, duration, "remote-hangup")
-            dialog.cseq += 1
-            await tp.send(build_bye(to_number=number, dialog=dialog, to_tag=to_tag,
-                                    request_uri=target, **call.common))
+            bye_sent = True
+            await tp.send(call.bye(dialog, to_tag, target))
             try:
                 await call._final("BYE", _REPLY_TIMEOUT)
             except asyncio.TimeoutError:
                 pass  # the call is over either way
             return CallResult(True, time.monotonic() - started, "completed")
         finally:
+            if acked and not bye_sent:
+                try:  # best-effort hangup so the callee isn't left off-hook; no wait for its 200
+                    await tp.send(call.bye(dialog, to_tag, target))
+                except Exception:
+                    pass
             if rtp:
                 await rtp.close()
             await tp.close()

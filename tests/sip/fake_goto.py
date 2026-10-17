@@ -2,7 +2,7 @@
 
 Deliberately an independent reimplementation: it imports nothing from gotoconnect.sip,
 so a bug in the library's message/digest code can't be mirrored here and hidden.
-Single-call, UDP only. Mimics the proven GoTo behavior: 407 (not 401) challenges on
+Single-call; UDP by default, SIP over TLS when given an ``ssl_context`` (RTP is always UDP). Mimics the proven GoTo behavior: 407 (not 401) challenges on
 REGISTER and INVITE, then per ``behavior`` answer / busy / no_answer /
 hangup_during_audio / reject_auth.
 
@@ -90,8 +90,10 @@ class _Rtp(asyncio.DatagramProtocol):
 
 
 class FakeGoToServer:
-    def __init__(self, username: str, password: str, behavior: str = "answer"):
+    def __init__(self, username: str, password: str, behavior: str = "answer", ssl_context=None):
         assert behavior in BEHAVIORS, behavior
+        self._ssl_context = ssl_context  # server-side context -> SIP over TLS
+        self._tls_server = None
         self.username, self.password, self.behavior = username, password, behavior
         self.registered = False
         self.invite_authenticated = False
@@ -114,21 +116,50 @@ class FakeGoToServer:
 
     async def start(self) -> tuple[str, int]:
         loop = asyncio.get_running_loop()
-        self._sip, _ = await loop.create_datagram_endpoint(lambda: _Sip(self), local_addr=(self._host, 0))
-        port = self._sip.get_extra_info("sockname")[1]
+        if self._ssl_context:
+            self._tls_server = await asyncio.start_server(self._serve_tls, self._host, 0, ssl=self._ssl_context)
+            port = self._tls_server.sockets[0].getsockname()[1]
+        else:
+            self._sip, _ = await loop.create_datagram_endpoint(lambda: _Sip(self), local_addr=(self._host, 0))
+            port = self._sip.get_extra_info("sockname")[1]
         self._contact = f"sip:svc@{self._host}:{port}"
         return self._host, port
 
     async def stop(self):
-        for t in (self._sip, self._rtp):
+        for t in (self._sip, self._rtp, self._tls_server):
             if t:
                 t.close()
 
     # ---- building / sending -------------------------------------------------
 
+    async def _serve_tls(self, reader, writer):
+        """One TLS connection: split the stream into messages by Content-Length; `addr` is the writer."""
+        buf = b""
+        try:
+            while chunk := await reader.read(4096):
+                buf += chunk
+                while (end := buf.find(b"\r\n\r\n")) >= 0:
+                    m = re.search(rb"^content-length:\s*(\d+)", buf[:end], re.I | re.M)
+                    total = end + 4 + (int(m.group(1)) if m else 0)
+                    if len(buf) < total:
+                        break
+                    data, buf = buf[:total], buf[total:]
+                    self.log.append(("in", data.decode(errors="replace")))
+                    try:
+                        self._on_sip(_Msg(data), writer)
+                    except (ValueError, IndexError) as e:
+                        self.log.append(("error", f"unparseable SIP message ({e!r})"))
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            writer.close()
+
     def _send(self, text: str, addr):
         self.log.append(("out", text))
-        self._sip.sendto(text.encode(), addr)
+        if self._ssl_context:
+            addr.write(text.encode())
+        else:
+            self._sip.sendto(text.encode(), addr)
 
     def _respond(self, req: _Msg, code: int, addr, extra: list[str] = (), body: str = "", tag: str = ""):
         """Echo Via/From/To/Call-ID/CSeq. Finals get a To-tag: `tag` if given, else a fresh one."""

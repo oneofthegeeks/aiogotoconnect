@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import time
 from collections.abc import Awaitable, Callable
@@ -33,11 +34,20 @@ class GoToOAuth:
         self._session = session
         self._access_token: str | None = None
         self._expires_at = 0.0
+        self._refresh_lock = asyncio.Lock()
+
+    def _needs_refresh(self) -> bool:
+        expiring = time.monotonic() >= self._expires_at - REFRESH_MARGIN_SECONDS
+        return self._access_token is None or expiring
 
     async def async_get_access_token(self) -> str:
-        expiring = time.monotonic() >= self._expires_at - REFRESH_MARGIN_SECONDS
-        if self._access_token is None or expiring:
-            await self._async_refresh()
+        if not self._needs_refresh():
+            return self._access_token
+        # Lock + re-check: concurrent callers wait, then reuse the token the first one fetched.
+        # Needed because a rotating refresh_token is single-use.
+        async with self._refresh_lock:
+            if self._needs_refresh():
+                await self._async_refresh()
         return self._access_token
 
     async def _async_refresh(self) -> None:
@@ -52,12 +62,22 @@ class GoToOAuth:
             payload = await self._async_post_token(self._session, headers, form)
 
         # Error text is deliberately not included: it could echo a secret.
-        self._access_token = payload["access_token"]
+        try:
+            access_token = payload["access_token"]
+            expires_in = float(payload["expires_in"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise GoToAuthError("Token response missing access_token or expires_in") from error
+        self._access_token = access_token
         self.refresh_token = payload.get("refresh_token", self.refresh_token)
-        self._expires_at = time.monotonic() + float(payload["expires_in"])
+        self._expires_at = time.monotonic() + expires_in
 
     async def _async_post_token(self, session, headers, form) -> dict:
-        async with session.post(self._token_url, headers=headers, data=form) as response:
-            if response.status != 200:
-                raise GoToAuthError(f"Token refresh failed with HTTP {response.status}")
-            return await response.json()
+        try:
+            async with session.post(self._token_url, headers=headers, data=form) as response:
+                if response.status != 200:
+                    raise GoToAuthError(f"Token refresh failed with HTTP {response.status}")
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            raise GoToAuthError("Token refresh request failed") from error
+        except ValueError as error:  # JSONDecodeError (non-JSON body)
+            raise GoToAuthError("Token response was not valid JSON") from error

@@ -36,7 +36,7 @@ import asyncio
 from gotoconnect import GoToVoice
 
 async def main():
-    voice = GoToVoice("sip-username", "sip-password")  # server="sip.goto.com"
+    voice = GoToVoice("sip-username", "sip-password")  # server="reg.jiveip.net"
     with open("message.wav", "rb") as f:  # 16-bit PCM WAV
         result = await voice.call_and_play("+15551234567", f.read(), ring_timeout=25, repeat=1)
     print(result)  # CallResult(answered=True, duration=4.2, reason='completed')
@@ -66,7 +66,11 @@ Bad arguments raise plain `ValueError` before any network traffic: an invalid de
 ### Create the SIP device in GoTo
 
 1. In GoTo Connect Admin, go to **Devices** -> **Add Device** -> **SIP Device**.
-2. Copy the **SIP Username**, **Password**, and **SIP Server** (e.g. `sip.goto.com`).
+2. Copy the **SIP Username**, **Password**, and the device's **SIP Server** and
+   **Outbound Proxy**. The registrar is typically `reg.jiveip.net` (the library's
+   default); the outbound proxy is account-specific (e.g.
+   `<account>.jive.rtcfront.net`) — pass it as `proxy=`. Calls proven live against
+   GoTo used both.
 
 ### Transport
 

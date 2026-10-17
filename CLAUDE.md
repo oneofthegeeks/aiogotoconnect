@@ -1,5 +1,7 @@
 # gotoconnect
 
+Live: v0.1.0 (2026-10-17) — first PyPI release; live-smoked against GoTo (UDP; registrar reg.jiveip.net + per-account proxy).
+
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.
 

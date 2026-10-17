@@ -1,12 +1,13 @@
 """Live smoke test: place a real call and play a WAV file.
 
     GOTO_SIP_USERNAME=... GOTO_SIP_PASSWORD=... python examples/make_call.py \
-        --to +15551234567 --wav message.wav [--transport tls]
+        --to +15551234567 --wav message.wav [--transport tls] [--verbose]
 
 The WAV should be 16-bit PCM mono; it is converted to G.711 before sending.
 """
 import argparse
 import asyncio
+import logging
 import os
 import sys
 
@@ -20,7 +21,11 @@ async def main() -> None:
     parser.add_argument("--server", default="sip.goto.com")
     parser.add_argument("--proxy", help="outbound proxy host (connection target; --server stays in URIs)")
     parser.add_argument("--transport", choices=["udp", "tls"], default="udp")
+    parser.add_argument("--verbose", action="store_true", help="log SIP start-lines and call state (no secrets)")
     args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(format="%(asctime)s %(name)s %(message)s")
+        logging.getLogger("gotoconnect").setLevel(logging.DEBUG)
 
     try:
         username, password = os.environ["GOTO_SIP_USERNAME"], os.environ["GOTO_SIP_PASSWORD"]

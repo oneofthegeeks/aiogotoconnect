@@ -1,5 +1,7 @@
 import asyncio
 import io
+import ssl
+import subprocess
 import wave
 
 import pytest
@@ -98,3 +100,28 @@ async def test_pcmu_call_sends_payload_type_0(fake):
 async def test_unknown_codec_rejected(fake):
     with pytest.raises(ValueError):
         await fake[1].call_and_play("+15551234567", _wav(0.5), codec="opus")
+
+
+async def test_happy_path_tls(tmp_path):
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+         "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
+         "-keyout", str(key), "-out", str(cert)],
+        check=True, capture_output=True,
+    )
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(cert, key)
+    server = FakeGoToServer("user", "pw", ssl_context=server_ctx)
+    host, port = await server.start()
+    try:
+        voice = GoToVoice("user", "pw", server=host, port=port, transport="tls",
+                          ssl_context=ssl.create_default_context(cafile=str(cert)))
+        result = await voice.call_and_play("+15551234567", _wav(0.5))
+        assert result.answered and result.reason == "completed" and result.duration > 0.4
+        assert server.registered and server.invite_authenticated and server.got_ack
+        assert "Via: SIP/2.0/TLS" in server.log[0][1]
+        await _eventually(lambda: len(server.rtp_packets) >= 20)
+        await _eventually(lambda: server.got_bye)
+    finally:
+        await server.stop()

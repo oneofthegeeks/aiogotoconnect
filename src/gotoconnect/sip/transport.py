@@ -126,9 +126,10 @@ class TlsTransport:
         return self._writer.get_extra_info("sockname")[:2]
 
 
-def make_transport(host: str, mode: str, port: int | None = None) -> SipTransport:
+def make_transport(host: str, mode: str, port: int | None = None,
+                   ssl_context: ssl.SSLContext | None = None) -> SipTransport:
     if mode == "udp":
         return UdpTransport(host, port or 5060)
     if mode == "tls":
-        return TlsTransport(host, port or 5061)
+        return TlsTransport(host, port or 5061, ssl_context)
     raise ValueError(f"unknown SIP transport mode: {mode!r}")

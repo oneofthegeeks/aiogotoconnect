@@ -7,6 +7,7 @@
 
 import asyncio
 import re
+import ssl
 import time
 from dataclasses import dataclass
 
@@ -193,16 +194,18 @@ class _Call:
 
 class GoToVoice:
     def __init__(self, username: str, password: str, server: str = "sip.goto.com",
-                 proxy: str | None = None, transport: str = "udp", port: int | None = None):
+                 proxy: str | None = None, transport: str = "udp", port: int | None = None,
+                 ssl_context: ssl.SSLContext | None = None):
         self.username, self.password, self.server = username, password, server
         self.proxy, self.transport, self.port = proxy, transport, port
+        self.ssl_context = ssl_context  # TLS only; None = verified system CAs
 
     async def call_and_play(self, number: str, wav_bytes: bytes, *, ring_timeout: float = 25.0,
                             repeat: int = 1, codec: str = "pcma") -> CallResult:
         _check_number(number)  # fail before touching the network
         payload = wav_to_g711(wav_bytes, codec)  # also rejects unknown codecs (ValueError)
         pt = CODEC_PAYLOADS[codec][0]
-        tp = make_transport(self.proxy or self.server, self.transport, self.port)
+        tp = make_transport(self.proxy or self.server, self.transport, self.port, self.ssl_context)
         rtp = call = dialog = None
         acked = bye_sent = False
         to_tag = target = None

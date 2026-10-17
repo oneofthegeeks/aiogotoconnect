@@ -40,13 +40,13 @@ class RawClient(asyncio.DatagramProtocol):
             if code >= 200:
                 return code, raw
 
-    def send(self, addr, method, call_id, cseq, extra="", body="", branch=None, uri="sip:goto.test", ctype=""):
+    def send(self, addr, method, call_id, cseq, extra="", body="", branch=None, uri="sip:goto.test", to_tag=""):
         branch = branch or f"z9hG4bK{call_id}{cseq}"
         lines = [
             f"{method} {uri} SIP/2.0",
             f"Via: SIP/2.0/UDP 127.0.0.1:5999;branch={branch}",
             f"From: <sip:{USER}@goto.test>;tag=ft",
-            "To: <sip:svc@goto.test>",
+            "To: <sip:svc@goto.test>" + (f";tag={to_tag}" if to_tag else ""),
             f"Call-ID: {call_id}",
             f"CSeq: {cseq} {method}",
             "Max-Forwards: 70",
@@ -98,12 +98,20 @@ SDP = (
 )
 
 
-async def invite(client, addr, call_id="inv1"):
+CONTACT = "Contact: <sip:alice@127.0.0.1:5999>"
+
+
+def to_tag(raw: str) -> str:
+    return re.search(r"To: .*;tag=(\w+)", raw).group(1)
+
+
+async def invite(client, addr, call_id="inv1", contact=True):
     """INVITE -> 407 -> authenticated INVITE. Returns the 407 so callers can check it."""
     client.send(addr, "INVITE", call_id, 1, body=SDP)
     code, challenge = await client.recv_final()
     assert code == 407
-    client.send(addr, "INVITE", call_id, 2, extra=auth_header(challenge, "INVITE", "sip:goto.test"), body=SDP)
+    extra = auth_header(challenge, "INVITE", "sip:goto.test") + ("\r\n" + CONTACT if contact else "")
+    client.send(addr, "INVITE", call_id, 2, extra=extra, body=SDP)
     return challenge
 
 
@@ -140,18 +148,26 @@ async def test_reject_auth_always_407(client):
 async def test_answer_flow(client):
     srv, addr = await start("answer")
     try:
-        await invite(client, addr)
+        c407 = await invite(client, addr)
         assert [int((await client.recv()).split()[1]) for _ in range(2)] == [100, 180]
         code, ok = await client.recv_final()
         assert code == 200 and srv.invite_authenticated
+        assert to_tag(ok) != to_tag(c407)  # dialog tag differs from the 407's tag
         m = re.search(r"m=audio (\d+) RTP/AVP", ok)
         assert m and "a=rtpmap:8 PCMA/8000" in ok
-        client.send(addr, "ACK", "inv1", 2)
+        assert srv.client_sdp == {
+            "addr": ("127.0.0.1", 40000), "codecs": [8, 101],
+            "rtpmap": {8: "PCMA/8000", 101: "telephone-event/8000"},
+        }
+        tag = to_tag(ok)
+        client.send(addr, "ACK", "inv1", 2, to_tag=tag)
         for i in range(3):
             client.transport.sendto(b"\x80\x08" + bytes([i]) * 10, ("127.0.0.1", int(m.group(1))))
-        client.send(addr, "BYE", "inv1", 3)
+        client.send(addr, "BYE", "inv1", 3, to_tag=tag, uri="sip:svc@127.0.0.1:%d" % addr[1])
         code, _ = await client.recv_final()
+        await asyncio.sleep(0.05)
         assert code == 200 and srv.got_ack and srv.got_bye and len(srv.rtp_packets) == 3
+        assert any(d == "in" for d, _ in srv.log) and any(d == "out" for d, _ in srv.log)
     finally:
         await srv.stop()
 
@@ -186,13 +202,105 @@ async def test_hangup_during_audio(client):
         await invite(client, addr)
         _, ok = await client.recv_final()
         port = int(re.search(r"m=audio (\d+)", ok).group(1))
-        client.send(addr, "ACK", "inv1", 2)
+        client.send(addr, "ACK", "inv1", 2, to_tag=to_tag(ok))
         for _ in range(10):
             client.transport.sendto(b"\x80\x08" + b"\0" * 10, ("127.0.0.1", port))
         bye = await client.recv()
-        assert bye.startswith("BYE ") and "Call-ID: inv1" in bye
+        assert bye.startswith("BYE sip:alice@127.0.0.1:5999 SIP/2.0\r\n")
+        assert "Call-ID: inv1" in bye and "CSeq: 1 BYE" in bye
+        assert f"From: <sip:svc@goto.test>;tag={to_tag(ok)}" in bye and "To: <sip:alice@goto.test>;tag=ft" in bye
         client.transport.sendto(b"SIP/2.0 200 OK\r\nCall-ID: inv1\r\nCSeq: 1 BYE\r\n\r\n", addr)
         await asyncio.sleep(0.1)
         assert srv.sent_bye and srv.got_ack
+    finally:
+        await srv.stop()
+
+
+async def test_hangup_without_contact_fails_loudly(client):
+    srv, addr = await start("hangup_during_audio")
+    try:
+        await invite(client, addr, contact=False)
+        _, ok = await client.recv_final()
+        port = int(re.search(r"m=audio (\d+)", ok).group(1))
+        for _ in range(10):
+            client.transport.sendto(b"\x80\x08" + b"\0" * 10, ("127.0.0.1", port))
+        await asyncio.sleep(0.2)
+        assert not srv.sent_bye
+        assert any(d == "error" and "no <Contact>" in t for d, t in srv.log)
+    finally:
+        await srv.stop()
+
+
+async def test_nonce_replay_across_methods_rejected(client):
+    srv, addr = await start()
+    try:
+        client.send(addr, "REGISTER", "reg1", 1)
+        _, challenge = await client.recv_final()
+        # Replay the REGISTER nonce on the first INVITE: must be challenged, not accepted.
+        client.send(addr, "INVITE", "inv1", 1, extra=auth_header(challenge, "INVITE", "sip:goto.test"), body=SDP)
+        code, _ = await client.recv_final()
+        assert code == 407 and not srv.invite_authenticated
+    finally:
+        await srv.stop()
+
+
+async def test_ack_with_wrong_call_id_or_tag_ignored(client):
+    srv, addr = await start()
+    try:
+        await invite(client, addr)
+        _, ok = await client.recv_final()
+        client.send(addr, "ACK", "other", 2, to_tag=to_tag(ok))
+        client.send(addr, "ACK", "inv1", 2, to_tag="bogus")
+        client.send(addr, "ACK", "inv1", 2)  # no To-tag (e.g. copied from the INVITE)
+        await asyncio.sleep(0.1)
+        assert not srv.got_ack
+        client.send(addr, "ACK", "inv1", 2, to_tag=to_tag(ok))
+        await asyncio.sleep(0.1)
+        assert srv.got_ack
+    finally:
+        await srv.stop()
+
+
+async def test_stray_cancel_after_200_does_not_487(client):
+    srv, addr = await start()
+    try:
+        await invite(client, addr)
+        await client.recv_final()  # the 200
+        client.send(addr, "CANCEL", "inv1", 2, branch="z9hG4bKinv12")
+        code, raw = await client.recv_final()
+        assert code == 200 and "CSeq: 2 CANCEL" in raw
+        with pytest.raises(asyncio.TimeoutError):
+            await client.recv(0.3)  # no 487
+        assert not srv.got_cancel
+    finally:
+        await srv.stop()
+
+
+async def test_cancel_with_wrong_branch_rejected(client):
+    srv, addr = await start("no_answer")
+    try:
+        await invite(client, addr)
+        await client.recv(); await client.recv()
+        client.send(addr, "CANCEL", "inv1", 2, branch="z9hG4bKwrong")
+        code, _ = await client.recv_final()
+        assert code == 481 and not srv.got_cancel
+    finally:
+        await srv.stop()
+
+
+async def test_invalid_rtp_not_counted_and_garbage_logged(client):
+    srv, addr = await start()
+    try:
+        await invite(client, addr)
+        _, ok = await client.recv_final()
+        dest = ("127.0.0.1", int(re.search(r"m=audio (\d+)", ok).group(1)))
+        for bad in (b"\x80\x00" + b"\0" * 10, b"\x40\x08" + b"\0" * 10, b"\x80\x08\0"):
+            client.transport.sendto(bad, dest)
+        client.transport.sendto(b"\x80\x08" + b"\0" * 10, dest)
+        client.transport.sendto(b"garbage", addr)
+        await asyncio.sleep(0.1)
+        assert len(srv.rtp_packets) == 1
+        assert sum(1 for d, t in srv.log if d == "error" and "invalid RTP" in t) == 3
+        assert any(d == "error" and "unparseable" in t for d, t in srv.log)
     finally:
         await srv.stop()

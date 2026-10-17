@@ -5,6 +5,10 @@ so a bug in the library's message/digest code can't be mirrored here and hidden.
 Single-call, UDP only. Mimics the proven GoTo behavior: 407 (not 401) challenges on
 REGISTER and INVITE, then per ``behavior`` answer / busy / no_answer /
 hangup_during_audio / reject_auth.
+
+It is intentionally strict (nonce bound to method+Call-ID, ACK/BYE/CANCEL must match the
+dialog, RTP must be well-formed) so a subtly wrong client fails here. Everything it sees
+and sends is in ``log`` as ("in" | "out" | "error", text) for debugging failures.
 """
 import asyncio
 import hashlib
@@ -15,12 +19,23 @@ REALM = "goto.test"
 BEHAVIORS = {"answer", "busy", "no_answer", "hangup_during_audio", "reject_auth"}
 REASONS = {
     100: "Trying", 180: "Ringing", 200: "OK", 407: "Proxy Authentication Required",
+    400: "Bad Request", 481: "Call/Transaction Does Not Exist",
     486: "Busy Here", 487: "Request Terminated",
 }
 
 
 def _md5(s: str) -> str:
     return hashlib.md5(s.encode()).hexdigest()
+
+
+def _tag(header: str) -> str:
+    m = re.search(r";\s*tag=([^;>\s]+)", header)
+    return m.group(1) if m else ""
+
+
+def _branch(msg: "_Msg") -> str:
+    m = re.search(r"branch=([^;,\s]+)", msg.get("Via"))
+    return m.group(1) if m else ""
 
 
 class _Msg:
@@ -30,8 +45,7 @@ class _Msg:
         head, _, self.body = data.decode(errors="replace").partition("\r\n\r\n")
         lines = head.split("\r\n")
         self.start = lines[0]
-        self.headers = [tuple(h.split(":", 1)) for h in lines[1:] if ":" in h]
-        self.headers = [(n.strip(), v.strip()) for n, v in self.headers]
+        self.headers = [(n.strip(), v.strip()) for n, v in (h.split(":", 1) for h in lines[1:] if ":" in h)]
         self.is_response = self.start.startswith("SIP/2.0")
         parts = self.start.split()
         self.method = "" if self.is_response else parts[0]
@@ -58,10 +72,13 @@ class _Sip(asyncio.DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data, addr):
+        raw = data.decode(errors="replace")
+        self.server.log.append(("in", raw))
         try:
             self.server._on_sip(_Msg(data), addr)
-        except (ValueError, IndexError):
-            pass  # malformed datagram: ignore, like a real server would
+        except (ValueError, IndexError) as e:
+            # Malformed datagram: don't act on it, but make it visible to the test.
+            self.server.log.append(("error", f"unparseable SIP datagram ({e!r}): {raw!r}"))
 
 
 class _Rtp(asyncio.DatagramProtocol):
@@ -78,22 +95,28 @@ class FakeGoToServer:
         self.username, self.password, self.behavior = username, password, behavior
         self.registered = False
         self.invite_authenticated = False
-        self.rtp_packets: list[bytes] = []
+        self.rtp_packets: list[bytes] = []  # valid RTP only (v2, PT 8, >= 12 bytes)
         self.got_ack = False
         self.got_bye = False
-        self.got_cancel = False
+        self.got_cancel = False  # a CANCEL that actually cancelled the pending INVITE
         self.sent_bye = False  # hangup_during_audio: we sent BYE to the client
-        self._nonces: set[str] = set()
-        self._invite: _Msg | None = None  # the authenticated INVITE, while call is live
+        self.client_sdp: dict | None = None  # parsed offer: {"addr": (ip, port), "codecs": [pt], "rtpmap": {pt: str}}
+        self.log: list[tuple[str, str]] = []
+        self._nonces: dict[str, tuple[str, str]] = {}  # nonce -> (method, Call-ID) it was issued for
+        self._invite: _Msg | None = None  # the authenticated INVITE
         self._invite_addr = None
-        self._to_tag = secrets.token_hex(4)
+        self._invite_final = False  # a final response was sent for the INVITE
+        self._dialog_tag = ""  # our To-tag for the INVITE dialog (differs from any 407 tag)
         self._sip = self._rtp = None
         self._host = "127.0.0.1"
+        self._contact = ""
 
     async def start(self) -> tuple[str, int]:
         loop = asyncio.get_running_loop()
         self._sip, _ = await loop.create_datagram_endpoint(lambda: _Sip(self), local_addr=(self._host, 0))
-        return self._sip.get_extra_info("sockname")[:2]
+        port = self._sip.get_extra_info("sockname")[1]
+        self._contact = f"sip:svc@{self._host}:{port}"
+        return self._host, port
 
     async def stop(self):
         for t in (self._sip, self._rtp):
@@ -102,10 +125,15 @@ class FakeGoToServer:
 
     # ---- building / sending -------------------------------------------------
 
-    def _respond(self, req: _Msg, code: int, extra: list[str] = (), body: str = "", addr=None):
+    def _send(self, text: str, addr):
+        self.log.append(("out", text))
+        self._sip.sendto(text.encode(), addr)
+
+    def _respond(self, req: _Msg, code: int, addr, extra: list[str] = (), body: str = "", tag: str = ""):
+        """Echo Via/From/To/Call-ID/CSeq. Finals get a To-tag: `tag` if given, else a fresh one."""
         to = req.get("To")
-        if code >= 200 and ";tag=" not in to:
-            to += f";tag={self._to_tag}"
+        if ";tag=" not in to and (code >= 200 or (tag and code == 180)):
+            to += f";tag={tag or secrets.token_hex(4)}"
         lines = [f"SIP/2.0 {code} {REASONS[code]}"]
         lines += [f"Via: {v}" for v in req.all("Via")]
         lines += [f"From: {req.get('From')}", f"To: {to}", f"Call-ID: {req.get('Call-ID')}", f"CSeq: {req.get('CSeq')}"]
@@ -113,12 +141,16 @@ class FakeGoToServer:
         if body:
             lines.append("Content-Type: application/sdp")
         lines += [f"Content-Length: {len(body.encode())}", "", body]
-        self._sip.sendto("\r\n".join(lines).encode(), addr or self._reply_addr)
+        self._send("\r\n".join(lines), addr)
 
-    def _challenge(self, req: _Msg):
+    def _challenge(self, req: _Msg, addr):
         nonce = secrets.token_hex(8)
-        self._nonces.add(nonce)
-        self._respond(req, 407, [f'Proxy-Authenticate: Digest realm="{REALM}", nonce="{nonce}", qop="auth"'])
+        self._nonces[nonce] = (req.method, req.get("Call-ID"))
+        self._respond(req, 407, addr, [f'Proxy-Authenticate: Digest realm="{REALM}", nonce="{nonce}", qop="auth"'])
+
+    def _final_invite(self, code: int, extra=(), body="", addr=None):
+        self._invite_final = True
+        self._respond(self._invite, code, addr or self._invite_addr, extra, body, tag=self._dialog_tag)
 
     # ---- digest (own implementation) ------------------------------------------
 
@@ -130,7 +162,10 @@ class FakeGoToServer:
         needed = ("username", "realm", "nonce", "uri", "response", "qop", "nc", "cnonce")
         if any(k not in p for k in needed):
             return False
-        if p["username"] != self.username or p["realm"] != REALM or p["nonce"] not in self._nonces:
+        if p["username"] != self.username or p["realm"] != REALM:
+            return False
+        # The nonce must have been issued for this very method + Call-ID (no cross-request replay).
+        if self._nonces.get(p["nonce"]) != (req.method, req.get("Call-ID")):
             return False
         if p["qop"] != "auth" or p["uri"] != req.uri:
             return False
@@ -142,7 +177,6 @@ class FakeGoToServer:
     # ---- SIP dispatch ------------------------------------------------------------
 
     def _on_sip(self, msg: _Msg, addr):
-        self._reply_addr = addr
         if msg.is_response:
             return  # only a 200 to our BYE is expected; nothing to do
         handler = getattr(self, f"_on_{msg.method.lower()}", None)
@@ -152,25 +186,39 @@ class FakeGoToServer:
     def _on_register(self, msg, addr):
         if self._auth_ok(msg):
             self.registered = True
-            self._respond(msg, 200, ["Expires: 60"])
+            self._respond(msg, 200, addr, ["Expires: 60"])
         else:
-            self._challenge(msg)
+            self._challenge(msg, addr)
 
     def _on_invite(self, msg, addr):
         if self._invite is not None and msg.get("Call-ID") == self._invite.get("Call-ID"):
             return  # retransmission of the live INVITE
         if not self._auth_ok(msg):
-            self._challenge(msg)
+            self._challenge(msg, addr)
             return
         self.invite_authenticated = True
-        self._invite, self._invite_addr = msg, addr
-        self._respond(msg, 100)
-        self._respond(msg, 180)
+        self._invite, self._invite_addr, self._invite_final = msg, addr, False
+        self._dialog_tag = secrets.token_hex(4)
+        self.client_sdp = self._parse_offer(msg.body)
+        self._respond(msg, 100, addr)
+        self._respond(msg, 180, addr, tag=self._dialog_tag)
         if self.behavior == "busy":
-            self._respond(msg, 486)
+            self._final_invite(486)
         elif self.behavior in ("answer", "hangup_during_audio"):
             asyncio.ensure_future(self._answer(msg, addr))
         # no_answer: silence until CANCEL
+
+    @staticmethod
+    def _parse_offer(body: str) -> dict | None:
+        c = re.search(r"^c=IN IP4 (\S+)", body, re.M)
+        m = re.search(r"^m=audio (\d+) RTP/AVP ([\d ]+)", body, re.M)
+        if not (c and m):
+            return None
+        return {
+            "addr": (c.group(1), int(m.group(1))),
+            "codecs": [int(x) for x in m.group(2).split()],
+            "rtpmap": {int(n): v for n, v in re.findall(r"^a=rtpmap:(\d+) (\S+)", body, re.M)},
+        }
 
     async def _answer(self, msg, addr):
         loop = asyncio.get_running_loop()
@@ -181,40 +229,76 @@ class FakeGoToServer:
             f"m=audio {port} RTP/AVP 8 101\r\na=rtpmap:8 PCMA/8000\r\na=rtpmap:101 telephone-event/8000\r\n"
             "a=sendrecv\r\n"
         )
-        sip_port = self._sip.get_extra_info("sockname")[1]
-        self._respond(msg, 200, [f"Contact: <sip:svc@{self._host}:{sip_port}>"], sdp, addr)
+        self._final_invite(200, [f"Contact: <{self._contact}>"], sdp, addr)
+
+    def _in_dialog(self, msg) -> bool:
+        return (
+            self._invite is not None
+            and msg.get("Call-ID") == self._invite.get("Call-ID")
+            and _tag(msg.get("To")) == self._dialog_tag
+        )
 
     def _on_ack(self, msg, addr):
-        # Only an ACK for the authenticated INVITE counts, not the ACK to a 407.
-        if self._invite is not None and msg.cseq[0] == self._invite.cseq[0]:
+        # Only an ACK for the authenticated INVITE's dialog counts: not the ACK to a 407,
+        # and not one with a foreign Call-ID or the wrong To-tag.
+        if self._in_dialog(msg) and msg.cseq[0] == self._invite.cseq[0]:
             self.got_ack = True
+        else:
+            self.log.append(("error", "ACK ignored: Call-ID/To-tag/CSeq do not match the dialog"))
 
     def _on_cancel(self, msg, addr):
+        inv = self._invite
+        if not (
+            inv is not None
+            and msg.get("Call-ID") == inv.get("Call-ID")
+            and msg.cseq[0] == inv.cseq[0]
+            and _branch(msg) == _branch(inv)
+            and msg.uri == inv.uri
+        ):
+            self.log.append(("error", "CANCEL does not match the INVITE (Call-ID/CSeq/branch/URI)"))
+            self._respond(msg, 481, addr)
+            return
+        self._respond(msg, 200, addr)
+        if self._invite_final:
+            self.log.append(("error", "CANCEL after final response: no effect"))
+            return
         self.got_cancel = True
-        self._respond(msg, 200)
-        if self._invite is not None:
-            self._respond(self._invite, 487, addr=self._invite_addr)
+        self._final_invite(487)
 
     def _on_bye(self, msg, addr):
-        self.got_bye = True
-        self._respond(msg, 200)
+        if not self._in_dialog(msg):
+            self.log.append(("error", "BYE does not match the dialog (Call-ID/To-tag)"))
+            self._respond(msg, 481, addr)
+        elif msg.uri != self._contact:
+            self.log.append(("error", f"BYE request-URI {msg.uri!r} is not our Contact {self._contact!r}"))
+            self._respond(msg, 400, addr)
+        else:
+            self.got_bye = True
+            self._respond(msg, 200, addr)
 
     # ---- RTP ---------------------------------------------------------------------------
 
     def _on_rtp(self, data: bytes):
+        if len(data) < 12 or data[0] >> 6 != 2 or data[1] & 0x7F != 8:
+            self.log.append(("error", f"invalid RTP packet (want v2, PT 8, >=12 bytes): {data[:12].hex()}"))
+            return
         self.rtp_packets.append(data)
         if self.behavior == "hangup_during_audio" and len(self.rtp_packets) == 10:
             self._send_bye()
 
     def _send_bye(self):
         inv = self._invite
+        contact = re.search(r"<([^>]+)>", inv.get("Contact"))
+        if not contact:
+            # Can't build a valid request-URI; fail loudly rather than send a malformed BYE.
+            self.log.append(("error", "cannot send BYE: INVITE has no <Contact>"))
+            return
         self.sent_bye = True
         sip_port = self._sip.get_extra_info("sockname")[1]
-        contact = re.search(r"<([^>]+)>", inv.get("Contact"))
         lines = [
-            f"BYE {contact.group(1) if contact else inv.get('From')} SIP/2.0",
+            f"BYE {contact.group(1)} SIP/2.0",
             f"Via: SIP/2.0/UDP {self._host}:{sip_port};branch=z9hG4bK{secrets.token_hex(4)}",
-            f"From: {inv.get('To')};tag={self._to_tag}",
+            f"From: {inv.get('To')};tag={self._dialog_tag}",
             f"To: {inv.get('From')}",
             f"Call-ID: {inv.get('Call-ID')}",
             "CSeq: 1 BYE",
@@ -222,4 +306,4 @@ class FakeGoToServer:
             "Content-Length: 0",
             "", "",
         ]
-        self._sip.sendto("\r\n".join(lines).encode(), self._invite_addr)
+        self._send("\r\n".join(lines), self._invite_addr)

@@ -98,3 +98,33 @@ def test_make_transport_defaults():
     assert make_transport("h", "udp", 5099).port == 5099
     with pytest.raises(ValueError):
         make_transport("h", "tcp")
+
+
+@pytest.mark.parametrize("split_at", [10, 45], ids=["mid-header", "mid-body"])
+async def test_tls_timeout_mid_message_preserves_partial_data(tls_certs, split_at):
+    server_ctx, client_ctx = tls_certs
+    msg = b"SIP/2.0 200 OK\r\nContent-Length: 11\r\n\r\nhello world"
+    assert 0 < split_at < len(msg)
+    release = asyncio.Event()
+
+    async def handle(reader, writer):
+        writer.write(msg[:split_at])
+        await writer.drain()
+        await release.wait()
+        writer.write(msg[split_at:])
+        await writer.drain()
+        await reader.read()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0, ssl=server_ctx)
+    t = TlsTransport("localhost", server.sockets[0].getsockname()[1], ssl_context=client_ctx)
+    await t.connect()
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await t.receive(0.1)  # only a fragment has arrived
+        release.set()
+        assert await t.receive(2) == msg
+    finally:
+        await t.close()
+        server.close()
+        await server.wait_closed()

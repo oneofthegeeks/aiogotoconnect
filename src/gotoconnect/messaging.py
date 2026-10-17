@@ -1,7 +1,9 @@
+import asyncio
+
 import aiohttp
 
 from gotoconnect.auth import TokenProvider
-from gotoconnect.exceptions import GoToApiError, GoToAuthError
+from gotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
 
 
 class GoToMessaging:
@@ -32,10 +34,13 @@ class GoToMessaging:
         return await self._async_post(self._session, url, headers, payload)
 
     async def _async_post(self, session, url, headers, payload) -> dict:
-        async with session.post(url, headers=headers, json=payload) as response:
-            if response.status == 401:
-                raise GoToAuthError("SMS send rejected: access token not accepted")
-            # Error text is deliberately not included: it could echo phone numbers or tokens.
-            if response.status >= 400:
-                raise GoToApiError(f"SMS send failed with HTTP {response.status}", response.status)
-            return await response.json()
+        try:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 401:
+                    raise GoToAuthError("SMS send rejected: access token not accepted")
+                # Error text is deliberately not included: it could echo phone numbers or tokens.
+                if response.status >= 400:
+                    raise GoToApiError(f"SMS send failed with HTTP {response.status}", response.status)
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+            raise GoToError("SMS send request failed") from error

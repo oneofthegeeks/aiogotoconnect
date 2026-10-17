@@ -2,7 +2,9 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from gotoconnect.exceptions import GoToApiError, GoToAuthError
+import asyncio
+
+from gotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
 from gotoconnect.messaging import GoToMessaging
 
 OWNER = "+15550000001"
@@ -82,6 +84,45 @@ async def test_other_error_status_raises_gotoapierror_with_status(aiohttp_server
         await client.async_send_sms(OWNER, CONTACTS, "hello")
 
     assert caught.value.status == status
+
+
+async def test_connection_dropped_raises_gotoerror(aiohttp_server):
+    async def drop_handler(request: web.Request) -> web.Response:
+        request.transport.close()  # no response at all -> aiohttp ClientError
+        return web.Response()
+
+    app = web.Application()
+    app.router.add_post("/messaging/v1/messages", drop_handler)
+    server = await aiohttp_server(app)
+    client = GoToMessaging(static_token, base_url=str(server.make_url("")).rstrip("/"))
+
+    with pytest.raises(GoToError) as caught:
+        await client.async_send_sms(OWNER, CONTACTS, "hello")
+
+    assert not isinstance(caught.value, GoToApiError)
+    assert isinstance(caught.value.__cause__, aiohttp.ClientError)
+
+
+async def test_timeout_raises_gotoerror(aiohttp_server):
+    async def slow_handler(request: web.Request) -> web.Response:
+        await asyncio.sleep(1)
+        return web.json_response({"messageId": "M1"})
+
+    app = web.Application()
+    app.router.add_post("/messaging/v1/messages", slow_handler)
+    server = await aiohttp_server(app)
+    session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0.05))
+    client = GoToMessaging(
+        static_token, session=session, base_url=str(server.make_url("")).rstrip("/")
+    )
+
+    try:
+        with pytest.raises(GoToError) as caught:
+            await client.async_send_sms(OWNER, CONTACTS, "hello")
+    finally:
+        await session.close()
+
+    assert isinstance(caught.value.__cause__, (asyncio.TimeoutError, aiohttp.ServerTimeoutError))
 
 
 async def test_owner_equal_to_contact_fails_fast_without_request(aiohttp_server):

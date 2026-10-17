@@ -117,18 +117,20 @@ def build_invite(username, domain, to_number, local_ip, local_port, media_port, 
 
 
 def build_ack(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
-              routes=(), branch=None, transport="UDP") -> bytes:
-    """Pass the INVITE's `branch` when ACKing a non-2xx; omit it for a 2xx ACK (new transaction)."""
+              routes=(), branch=None, transport="UDP", request_uri=None) -> bytes:
+    """Pass the INVITE's `branch` when ACKing a non-2xx; omit it for a 2xx ACK (new transaction).
+    `request_uri` = the 200 OK's Contact URI for a 2xx ACK (RFC 3261 12.2.1.1); To stays the callee."""
     uri = f"sip:{_check_number(to_number)}@{domain}"
-    return _request("ACK", uri, dialog, username, domain, local_ip, local_port, transport, uri,
-                    to_tag=to_tag, branch=branch, routes=routes)
+    return _request("ACK", request_uri or uri, dialog, username, domain, local_ip, local_port,
+                    transport, uri, to_tag=to_tag, branch=branch, routes=routes)
 
 
 def build_bye(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
-              routes=(), transport="UDP") -> bytes:
+              routes=(), transport="UDP", request_uri=None) -> bytes:
+    """`request_uri` = the 200 OK's Contact URI (in-dialog requests go to the remote target)."""
     uri = f"sip:{_check_number(to_number)}@{domain}"
-    return _request("BYE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
-                    to_tag=to_tag, routes=routes)
+    return _request("BYE", request_uri or uri, dialog, username, domain, local_ip, local_port,
+                    transport, uri, to_tag=to_tag, routes=routes)
 
 
 def build_cancel(username, domain, to_number, local_ip, local_port, dialog, branch,

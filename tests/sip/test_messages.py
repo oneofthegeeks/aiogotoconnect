@@ -144,3 +144,12 @@ def test_control_char_in_other_values_rejected():
 def test_malformed_challenge_raises_siperror(ch):
     with pytest.raises(GoToSipError):
         digest_response(ch, "GET", "/", "u", "p")
+
+
+def test_bye_ack_request_uri_override_keeps_to_header():
+    kw = dict(**ARGS, to_number="+15559876543", dialog=SipDialog(), to_tag="peer1",
+              request_uri="sip:svc@10.0.0.9:5070")
+    for build in (build_bye, build_ack):
+        msg = build(**kw).decode()
+        assert msg.split("\r\n")[0].split()[1] == "sip:svc@10.0.0.9:5070"
+        assert "To: <sip:+15559876543@sip.goto.com>;tag=peer1\r\n" in msg

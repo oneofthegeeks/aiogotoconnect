@@ -6,13 +6,18 @@ from gotoconnect.exceptions import (
     GoToError,
     GoToSipError,
 )
+from gotoconnect.messaging import GoToMessaging
+from gotoconnect.sip.call import CallResult, GoToVoice
 
 __all__ = [
+    "CallResult",
     "GoToApiError",
     "GoToAuthError",
     "GoToCallError",
     "GoToError",
+    "GoToMessaging",
     "GoToOAuth",
     "GoToSipError",
+    "GoToVoice",
     "TokenProvider",
 ]

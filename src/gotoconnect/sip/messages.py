@@ -72,7 +72,16 @@ def _request(method, request_uri, dialog, username, domain, local_ip, local_port
         *extra,
         f"Content-Length: {len(body.encode())}",
     ]
+    # Header-injection guard: no CR/LF/control chars in any header line or URI.
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for line in lines for c in line):
+        raise GoToSipError("control character in SIP header value")
     return (CRLF.join(lines) + CRLF + CRLF + body).encode()
+
+
+def _check_number(to_number: str) -> str:
+    if not re.fullmatch(r"\+?[0-9*#]{1,32}", to_number):
+        raise ValueError(f"invalid destination number: {to_number!r}")
+    return to_number
 
 
 def build_register(username, domain, local_ip, local_port, dialog, expires=60,
@@ -101,7 +110,7 @@ def _sdp(local_ip: str, media_port: int) -> str:
 
 def build_invite(username, domain, to_number, local_ip, local_port, media_port, dialog,
                  auth_header=None, transport="UDP") -> bytes:
-    uri = f"sip:{to_number}@{domain}"
+    uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("INVITE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     extra=[*([auth_header] if auth_header else []), "Content-Type: application/sdp"],
                     body=_sdp(local_ip, media_port))
@@ -110,14 +119,14 @@ def build_invite(username, domain, to_number, local_ip, local_port, media_port, 
 def build_ack(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
               routes=(), branch=None, transport="UDP") -> bytes:
     """Pass the INVITE's `branch` when ACKing a non-2xx; omit it for a 2xx ACK (new transaction)."""
-    uri = f"sip:{to_number}@{domain}"
+    uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("ACK", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     to_tag=to_tag, branch=branch, routes=routes)
 
 
 def build_bye(username, domain, to_number, local_ip, local_port, dialog, to_tag="",
               routes=(), transport="UDP") -> bytes:
-    uri = f"sip:{to_number}@{domain}"
+    uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("BYE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     to_tag=to_tag, routes=routes)
 
@@ -125,7 +134,7 @@ def build_bye(username, domain, to_number, local_ip, local_port, dialog, to_tag=
 def build_cancel(username, domain, to_number, local_ip, local_port, dialog, branch,
                  transport="UDP") -> bytes:
     """`branch` and dialog.cseq must match the INVITE being cancelled (RFC 3261 9.1)."""
-    uri = f"sip:{to_number}@{domain}"
+    uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("CANCEL", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     branch=branch)
 
@@ -142,6 +151,8 @@ def digest_response(challenge: str, method: str, uri: str, username: str, passwo
     algorithm = params.get("algorithm", "MD5")
     if algorithm.upper() != "MD5":
         raise GoToSipError(f"unsupported digest algorithm: {algorithm}")
+    if "realm" not in params or "nonce" not in params:
+        raise GoToSipError("malformed digest challenge: missing realm or nonce")
     realm, nonce = params["realm"], params["nonce"]
     ha1 = _md5(f"{username}:{realm}:{password}")
     ha2 = _md5(f"{method}:{uri}")

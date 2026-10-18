@@ -238,7 +238,7 @@ class _Call:
 
         def build(auth):
             req = build_invite(to_number=self.number, media_port=self.rtp.local_port,
-                               dialog=dialog, auth_header=auth, codec=codec, **self.common)
+                               dialog=dialog, auth_header=auth, codecs=(codec,), **self.common)
             self.invite_branch = _branch_of(req)
             self.pending = (dialog, self.invite_branch)
             return req

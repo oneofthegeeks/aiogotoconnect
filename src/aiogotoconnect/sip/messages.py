@@ -17,7 +17,9 @@ from aiogotoconnect.exceptions import GoToSipError
 
 CRLF = "\r\n"
 # codec -> (RTP payload type, rtpmap name)
-CODEC_PAYLOADS = {"pcma": (8, "PCMA"), "pcmu": (0, "PCMU")}
+# G.722 is advertised as G722/8000 even though it samples at 16 kHz (RFC 3551 quirk).
+CODEC_PAYLOADS = {"pcma": (8, "PCMA"), "pcmu": (0, "PCMU"), "g722": (9, "G722")}
+PT_CODECS = {pt: codec for codec, (pt, _) in CODEC_PAYLOADS.items()}
 
 
 @dataclass
@@ -98,16 +100,16 @@ def build_register(username: str, domain: str, local_ip: str, local_port: int, d
                     extra=[f"Expires: {expires}", *([auth_header] if auth_header else [])])
 
 
-def _sdp(local_ip: str, media_port: int, codec: str = "pcma") -> str:
-    pt, name = CODEC_PAYLOADS[codec]
+def _sdp(local_ip: str, media_port: int, codecs: Sequence[str]) -> str:
+    offered = [CODEC_PAYLOADS[c] for c in codecs]
     return CRLF.join([
         "v=0",
         f"o=- 53655765 2353687637 IN IP4 {local_ip}",
         "s=GoTo",
         f"c=IN IP4 {local_ip}",
         "t=0 0",
-        f"m=audio {media_port} RTP/AVP {pt} 101",
-        f"a=rtpmap:{pt} {name}/8000",
+        f"m=audio {media_port} RTP/AVP {' '.join(str(pt) for pt, _ in offered)} 101",
+        *(f"a=rtpmap:{pt} {name}/8000" for pt, name in offered),
         "a=ptime:20",
         "a=sendrecv",
         "a=rtpmap:101 telephone-event/8000",
@@ -118,11 +120,11 @@ def _sdp(local_ip: str, media_port: int, codec: str = "pcma") -> str:
 
 def build_invite(username: str, domain: str, to_number: str, local_ip: str, local_port: int,
                  media_port: int, dialog: SipDialog, auth_header: str | None = None,
-                 transport: str = "UDP", codec: str = "pcma") -> bytes:
+                 transport: str = "UDP", codecs: Sequence[str] = ("pcma",)) -> bytes:
     uri = f"sip:{_check_number(to_number)}@{domain}"
     return _request("INVITE", uri, dialog, username, domain, local_ip, local_port, transport, uri,
                     extra=[*([auth_header] if auth_header else []), "Content-Type: application/sdp"],
-                    body=_sdp(local_ip, media_port, codec))
+                    body=_sdp(local_ip, media_port, codecs))
 
 
 def build_ack(username: str, domain: str, to_number: str, local_ip: str, local_port: int,

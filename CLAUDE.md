@@ -20,7 +20,7 @@ python3 -m venv .venv
 pytest: `.venv/bin/python -m pytest -W error`. All protocol tests run against a fake GoTo SIP server in `tests/sip/fake_goto.py` (UDP, or TLS with an ssl_context) - no network. Live check: `examples/make_call.py`.
 
 ## Deployment
-Tag `vX.Y.Z` -> GitHub Actions `publish.yml` -> PyPI trusted publishing. No Docker - it's a library.
+Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the `pypi` environment PAUSES for Taylor's manual approval in the Actions UI -> PyPI trusted publishing. Main is PR-only (required checks: test 3.12 + 3.13); work lands via PRs Taylor merges. No Docker - it's a library.
 
 ## Key Files
 `src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).

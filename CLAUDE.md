@@ -1,6 +1,6 @@
 # aiogotoconnect
 
-Live: v0.3.0 (2026-10-18) — G.722 wideband + SDP answer negotiation (breaking: `codec=` → `codecs=`); live-smoked: GoTo answers G.722 for these SIP devices.
+Live: v0.3.1 (2026-10-18) — G.722 wideband + SDP answer negotiation (0.3.0, breaking `codec=` → `codecs=`) plus call-quality polish: pre-encode during ring, 0.3 s tail silence. GoTo answers G.722 (live-proven).
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.

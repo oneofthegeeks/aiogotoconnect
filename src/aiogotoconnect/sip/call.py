@@ -349,7 +349,9 @@ class GoToVoice:
             dest = (ip, rtp_port)
             codec = _codec_from_answer(answered, codecs)
             pt = CODEC_PAYLOADS[codec][0]
-            payload = pcm_to_payload(pcm, rate, codec)
+            # ponytail: callee hears ~0.1 s dead air per 1 s of audio while G.722 encodes; upgrade =
+            #           start the encode in a to_thread task during ringing for the preferred codec.
+            payload = await asyncio.to_thread(pcm_to_payload, pcm, rate, codec)  # CPU-bound: keep the loop free
             log.debug("streaming %s audio to %s:%s", codec, *dest)
             hung_up = await call.stream_until_done(payload, dest, repeat, pt, leg)
             duration = time.monotonic() - started

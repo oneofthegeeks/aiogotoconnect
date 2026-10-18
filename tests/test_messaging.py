@@ -4,8 +4,8 @@ from aiohttp import web
 
 import asyncio
 
-from gotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
-from gotoconnect.messaging import GoToMessaging
+from aiogotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
+from aiogotoconnect.messaging import GoToMessaging
 
 OWNER = "+15550000001"
 CONTACTS = ["+15550000002", "+15550000003"]

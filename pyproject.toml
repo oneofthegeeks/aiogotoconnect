@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gotoconnect"
-version = "0.1.0"
+name = "aiogotoconnect"
+version = "0.2.0"
 description = "Async Python client for GoTo Connect: SMS via Messaging v2, outbound TTS voice calls via SIP"
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,7 +25,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-gotoconnect = ["py.typed"]
+aiogotoconnect = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

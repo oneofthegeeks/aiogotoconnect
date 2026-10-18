@@ -1,5 +1,5 @@
 class GoToError(Exception):
-    """Base class for all gotoconnect errors."""
+    """Base class for all aiogotoconnect errors."""
 
 
 class GoToAuthError(GoToError):

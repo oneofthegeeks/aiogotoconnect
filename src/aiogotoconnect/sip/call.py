@@ -12,9 +12,9 @@ import ssl
 import time
 from dataclasses import dataclass
 
-from gotoconnect.exceptions import GoToAuthError, GoToCallError, GoToSipError
-from gotoconnect.sip.audio import wav_to_g711
-from gotoconnect.sip.messages import (
+from aiogotoconnect.exceptions import GoToAuthError, GoToCallError, GoToSipError
+from aiogotoconnect.sip.audio import wav_to_g711
+from aiogotoconnect.sip.messages import (
     CODEC_PAYLOADS,
     SipDialog,
     SipResponse,
@@ -26,8 +26,8 @@ from gotoconnect.sip.messages import (
     build_register,
     digest_response,
 )
-from gotoconnect.sip.rtp import RtpSender
-from gotoconnect.sip.transport import SipTransport, make_transport
+from aiogotoconnect.sip.rtp import RtpSender
+from aiogotoconnect.sip.transport import SipTransport, make_transport
 
 log = logging.getLogger(__name__)  # start-lines/status codes only: never headers (auth values)
 

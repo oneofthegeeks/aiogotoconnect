@@ -7,7 +7,7 @@ import re
 import ssl
 from typing import Protocol
 
-from gotoconnect.exceptions import GoToSipError
+from aiogotoconnect.exceptions import GoToSipError
 
 _CONTENT_LENGTH = re.compile(rb"^(?:content-length|l)[ \t]*:[ \t]*(\d+)", re.I | re.M)
 

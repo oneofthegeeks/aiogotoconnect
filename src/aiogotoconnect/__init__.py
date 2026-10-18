@@ -1,13 +1,13 @@
-from gotoconnect.auth import GoToOAuth, TokenProvider
-from gotoconnect.exceptions import (
+from aiogotoconnect.auth import GoToOAuth, TokenProvider
+from aiogotoconnect.exceptions import (
     GoToApiError,
     GoToAuthError,
     GoToCallError,
     GoToError,
     GoToSipError,
 )
-from gotoconnect.messaging import GoToMessaging
-from gotoconnect.sip.call import CallResult, GoToVoice
+from aiogotoconnect.messaging import GoToMessaging
+from aiogotoconnect.sip.call import CallResult, GoToVoice
 
 __all__ = [
     "CallResult",

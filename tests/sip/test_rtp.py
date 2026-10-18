@@ -3,7 +3,7 @@ import socket
 import struct
 import time
 
-from gotoconnect.sip.rtp import RtpSender
+from aiogotoconnect.sip.rtp import RtpSender
 
 
 def _listener():

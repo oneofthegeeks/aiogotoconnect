@@ -5,7 +5,7 @@ import wave
 
 import pytest
 
-from gotoconnect.sip.audio import wav_to_g711
+from aiogotoconnect.sip.audio import wav_to_g711
 
 
 def make_wav(rate: int, channels: int, width: int, seconds: float = 1.0) -> bytes:

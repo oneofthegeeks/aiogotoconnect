@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 
-from gotoconnect import GoToVoice
+from aiogotoconnect import GoToVoice
 
 
 async def main() -> None:
@@ -25,7 +25,7 @@ async def main() -> None:
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(format="%(asctime)s %(name)s %(message)s")
-        logging.getLogger("gotoconnect").setLevel(logging.DEBUG)
+        logging.getLogger("aiogotoconnect").setLevel(logging.DEBUG)
 
     try:
         username, password = os.environ["GOTO_SIP_USERNAME"], os.environ["GOTO_SIP_PASSWORD"]

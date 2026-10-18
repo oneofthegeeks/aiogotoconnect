@@ -2,8 +2,8 @@ import asyncio
 
 import aiohttp
 
-from gotoconnect.auth import TokenProvider
-from gotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
+from aiogotoconnect.auth import TokenProvider
+from aiogotoconnect.exceptions import GoToApiError, GoToAuthError, GoToError
 
 
 class GoToMessaging:

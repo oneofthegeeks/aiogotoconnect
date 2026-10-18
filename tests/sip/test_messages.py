@@ -2,8 +2,8 @@ import hashlib
 
 import pytest
 
-from gotoconnect.exceptions import GoToSipError
-from gotoconnect.sip.messages import (
+from aiogotoconnect.exceptions import GoToSipError
+from aiogotoconnect.sip.messages import (
     SipDialog,
     SipResponse,
     build_ack,

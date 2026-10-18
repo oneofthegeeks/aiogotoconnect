@@ -5,8 +5,8 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from gotoconnect.auth import GoToOAuth
-from gotoconnect.exceptions import GoToAuthError
+from aiogotoconnect.auth import GoToOAuth
+from aiogotoconnect.exceptions import GoToAuthError
 
 
 def token_app(calls: list, status: int = 200, payload: dict | None = None) -> web.Application:

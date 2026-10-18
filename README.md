@@ -1,13 +1,15 @@
-# gotoconnect
+# aiogotoconnect
 
 Async Python client for GoTo Connect: send SMS via the Messaging v2 API and place outbound text-to-speech voice calls over SIP. Pure Python, asyncio only.
 
 Used by [ha-goto](https://github.com/oneofthegeeks/ha-goto), the Home Assistant integration.
 
+Formerly published as `gotoconnect` (v0.1.0); renamed so the unofficial client does not carry the bare product name. The old PyPI name stays claimed but dormant.
+
 ## Install
 
 ```bash
-pip install gotoconnect
+pip install aiogotoconnect
 ```
 
 Python 3.12+.
@@ -16,12 +18,12 @@ Python 3.12+.
 
 ```python
 import asyncio
-from gotoconnect import GoToOAuth, GoToMessaging
+from aiogotoconnect import GoToOAuth, GoToMessaging
 
 async def main():
     auth = GoToOAuth(client_id="...", client_secret="...", refresh_token="...")
     sms = GoToMessaging(auth.async_get_access_token)
-    await sms.async_send_sms("+15551230000", ["+15551234567"], "Hello from gotoconnect")
+    await sms.async_send_sms("+15551230000", ["+15551234567"], "Hello from aiogotoconnect")
     # GoTo may rotate the refresh token: persist auth.refresh_token after calls.
 
 asyncio.run(main())
@@ -33,7 +35,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from gotoconnect import GoToVoice
+from aiogotoconnect import GoToVoice
 
 async def main():
     voice = GoToVoice("sip-username", "sip-password")  # server="reg.jiveip.net"
@@ -50,7 +52,7 @@ UDP requests are retransmitted (0.5 s, 1 s, 2 s, ...) until the server responds,
 
 ### Logging
 
-Everything logs to `logging.getLogger("gotoconnect.sip.call")` at DEBUG: SIP start-lines and status codes plus state changes, never headers or credentials. `examples/make_call.py --verbose` turns it on.
+Everything logs to `logging.getLogger("aiogotoconnect.sip.call")` at DEBUG: SIP start-lines and status codes plus state changes, never headers or credentials. `examples/make_call.py --verbose` turns it on.
 
 ## Exceptions
 

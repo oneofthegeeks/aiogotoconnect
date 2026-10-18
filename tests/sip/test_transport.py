@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from gotoconnect.sip.transport import TlsTransport, UdpTransport, make_transport
+from aiogotoconnect.sip.transport import TlsTransport, UdpTransport, make_transport
 
 
 class _Echo(asyncio.DatagramProtocol):

@@ -45,6 +45,31 @@ def test_silence_roundtrip():  # all-zero input decodes to near-silence
     assert max(abs(s) for s in out) < 100
 
 
+# Expected encode() output for 400 samples of 1 kHz (amp 6000) + 3 kHz (amp 4000).
+# Provenance: generated 2026-10-18 by `ffmpeg -f s16le -ar 16000 -ac 1 -i - -c:a g722
+# -f g722 -` on this exact input; byte-identical to this module's encoder at the time.
+GOLDEN = bytes.fromhex(
+    "b78d2188229820a020ad0a179116eab530b44f1b94186bf930f4cf5e9558ebbc"
+    "71f54f3e95596bfc31f6cf7f955aecbc71f74f3dd55becbd71b8cf7c955a6dfe"
+    "72b9d07d955b6bde32f8517f955b6cfd31f9503dd45beb9e71b8d27ed45aecbb"
+    "30f8507cd45aecbd2ffa507dd51b6b9e70f8537e945aedbc70f8505e935becbe"
+    "72bad0ff945a6cff2ffb507c96dcacbeefb9d17ad55cecfb2ff85079d65bebbd"
+    "30f953fd93dcedff32f8517c935dedfe32f8517b935cecfb32f85178935cecfa"
+    "32f85079935cacba"
+)
+
+
+def test_golden_vector():  # bit-exact against the reference (ffmpeg) bitstream
+    pcm = struct.pack(
+        "<400h",
+        *(
+            round(6000 * math.sin(2 * math.pi * 1000 * n / 16000) + 4000 * math.sin(2 * math.pi * 3000 * n / 16000))
+            for n in range(400)
+        ),
+    )
+    assert g722.encode(pcm) == GOLDEN
+
+
 def test_deterministic():  # encode(x) == encode(x): no hidden global state
     pcm = _sine(freq=440)
     assert g722.encode(pcm) == g722.encode(pcm)

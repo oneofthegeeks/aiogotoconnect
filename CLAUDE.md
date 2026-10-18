@@ -29,7 +29,7 @@ Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the
 - GoTo challenges with 407 (Proxy-Authenticate), not 401; 401 is handled too.
 - The From user must be the SIP username, never the local IP.
 - REGISTER and INVITE use distinct Call-IDs; the digest nonce is bound per method.
-- `call_and_play(codecs=("g722", "pcma"))` is the default offer (one m= line, plus telephone-event/101); PCMU is opt-in via `codecs=("pcmu",)`. The payload is encoded after the 200 OK with the codec GoTo answered.
+- `call_and_play(codecs=("g722", "pcma"))` is the default offer (one m= line, plus telephone-event/101); PCMU is opt-in via `codecs=("pcmu",)`. The preferred codec is pre-encoded while ringing (re-encoded only if the answer differs), and 0.3 s of trailing silence keeps the BYE from clipping the last word.
 - G.722 rtpmap is `G722/8000` (RFC 3551 quirk: RTP clock is 8 kHz though sampling is 16 kHz), so `sip/rtp.py` is unchanged: 160 bytes / 160 ticks per 20 ms frame.
 - `audioop` deprecation warning is suppressed at import on 3.12 (audioop-lts on 3.13+).
 - REGISTER happens per call (no persistent registration).

@@ -46,6 +46,8 @@ async def main():
 asyncio.run(main())
 ```
 
+Audio is sent as G.722 wideband when GoTo accepts it, else G.711 PCMA; pass `codecs=("pcmu",)` to force PCMU.
+
 `reason` is one of `completed`, `remote-hangup`, `no-answer`, `busy`, `rejected`. `bye_confirmed` is `False` only when we hung up but the server never answered (or refused) our BYE, so the far side may still think the call is up; it is `True` when no BYE was needed or it was confirmed. Bad SIP credentials raise `GoToAuthError`.
 
 UDP requests are retransmitted (0.5 s, 1 s, 2 s, ...) until the server responds, and the Record-Route set from the answer is honoured on the ACK and BYE. Cancelling the `call_and_play` task hangs up (or CANCELs a ringing call) before the cancellation propagates.
@@ -63,7 +65,7 @@ All library errors derive from `GoToError`:
 - `GoToSipError`: SIP registration/signalling failed, including network failures (timeouts, DNS, TLS errors are wrapped, never raised raw).
   - `GoToCallError`: the call itself failed (e.g. 4xx/5xx to the INVITE, no usable SDP).
 
-Bad arguments raise plain `ValueError` before any network traffic: an invalid destination number, a WAV that is unreadable, empty or has more than two channels, or an unknown `codec`.
+Bad arguments raise plain `ValueError` before any network traffic: an invalid destination number, a WAV that is unreadable, empty or has more than two channels, or an empty/unknown `codecs` entry (default `("g722", "pcma")`; the codec is picked from the server's answer).
 
 ### Create the SIP device in GoTo
 

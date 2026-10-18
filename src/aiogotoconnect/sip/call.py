@@ -1,4 +1,4 @@
-"""Outbound SIP call: REGISTER -> INVITE -> play G.711 audio over RTP -> BYE.
+"""Outbound SIP call: REGISTER -> INVITE -> play G.722/G.711 audio over RTP -> BYE.
 
 # ponytail: per-call REGISTER; persistent registration if call setup latency ever matters
 # ponytail: UDP retransmits are a simple 0.5s-doubling resend until the first response; no full
@@ -10,12 +10,14 @@ import logging
 import re
 import ssl
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from aiogotoconnect.exceptions import GoToAuthError, GoToCallError, GoToSipError
-from aiogotoconnect.sip.audio import wav_to_g711
+from aiogotoconnect.sip.audio import pcm_to_payload, wav_pcm
 from aiogotoconnect.sip.messages import (
     CODEC_PAYLOADS,
+    PT_CODECS,
     SipDialog,
     SipResponse,
     _check_number,
@@ -75,12 +77,21 @@ def _ok_for(request: bytes) -> bytes:
     return "\r\n".join(["SIP/2.0 200 OK", *kept, "Content-Length: 0", "", ""]).encode()
 
 
-def _remote_media(sdp: str) -> tuple[str, int]:
+def _remote_media(sdp: str) -> tuple[str, int, tuple[int, ...]]:
+    """(ip, port, payload types) from the answer's c= and m=audio lines."""
     c = re.search(r"^c=IN IP4 (\S+)", sdp, re.M)
-    m = re.search(r"^m=audio (\d+) ", sdp, re.M)
+    m = re.search(r"^m=audio (\d+) \S+ ([\d ]+)", sdp, re.M)
     if not (c and m):
         raise GoToCallError("200 OK carried no usable audio SDP")
-    return c.group(1), int(m.group(1))
+    return c.group(1), int(m.group(1)), tuple(int(x) for x in m.group(2).split())
+
+
+def _codec_from_answer(pts: Sequence[int], offered: Sequence[str]) -> str:
+    """First answered payload type that is one of our offered codecs; else our first offer."""
+    for pt in pts:
+        if PT_CODECS.get(pt) in offered:
+            return PT_CODECS[pt]
+    return offered[0]
 
 
 class _Call:
@@ -232,13 +243,13 @@ class _Call:
             raise GoToSipError(f"REGISTER failed: {resp.status} {resp.reason}")
         log.debug("registered")
 
-    async def invite(self, ring_timeout: float, codec: str) -> tuple[SipDialog, SipResponse | None, str, bool]:
+    async def invite(self, ring_timeout: float, codecs: Sequence[str]) -> tuple[SipDialog, SipResponse | None, str, bool]:
         """Returns (dialog, final response or None on ring timeout, INVITE branch, bye_confirmed)."""
         dialog = SipDialog()
 
         def build(auth):
             req = build_invite(to_number=self.number, media_port=self.rtp.local_port,
-                               dialog=dialog, auth_header=auth, codec=codec, **self.common)
+                               dialog=dialog, auth_header=auth, codecs=codecs, **self.common)
             self.invite_branch = _branch_of(req)
             self.pending = (dialog, self.invite_branch)
             return req
@@ -305,10 +316,12 @@ class GoToVoice:
         self.ssl_context = ssl_context  # TLS only; None = verified system CAs
 
     async def call_and_play(self, number: str, wav_bytes: bytes, *, ring_timeout: float = 25.0,
-                            repeat: int = 1, codec: str = "pcma") -> CallResult:
+                            repeat: int = 1,
+                            codecs: Sequence[str] = ("g722", "pcma")) -> CallResult:
         _check_number(number)  # fail before touching the network
-        payload = wav_to_g711(wav_bytes, codec)  # also rejects unknown codecs (ValueError)
-        pt = CODEC_PAYLOADS[codec][0]
+        pcm, rate = wav_pcm(wav_bytes)  # bad WAV -> ValueError before any network I/O
+        if not codecs or any(c not in CODEC_PAYLOADS for c in codecs):
+            raise ValueError(f"codecs must be a non-empty subset of {', '.join(CODEC_PAYLOADS)}; got {tuple(codecs)!r}")
         tp = make_transport(self.proxy or self.server, self.transport, self.port, self.ssl_context)
         rtp = call = leg = None
         acked = bye_sent = False
@@ -317,7 +330,7 @@ class GoToVoice:
             rtp = RtpSender()  # bound now so the INVITE's SDP carries the real port
             call = _Call(tp, self.transport, self.username, self.password, self.server, number, rtp)
             await call.register()
-            dialog, resp, branch, bye_ok = await call.invite(ring_timeout, codec)
+            dialog, resp, branch, bye_ok = await call.invite(ring_timeout, codecs)
             if resp is None:
                 return CallResult(False, 0.0, "no-answer", bye_ok)
             if resp.status in _REFUSALS:
@@ -332,8 +345,14 @@ class GoToVoice:
             started = time.monotonic()
             await call.ack_2xx(leg)
             acked = True  # dialog is up: from here the finally must hang up on any failure
-            dest = _remote_media(resp.body)
-            log.debug("streaming audio to %s:%s", *dest)
+            ip, rtp_port, answered = _remote_media(resp.body)
+            dest = (ip, rtp_port)
+            codec = _codec_from_answer(answered, codecs)
+            pt = CODEC_PAYLOADS[codec][0]
+            # ponytail: callee hears ~0.1 s dead air per 1 s of audio while G.722 encodes; upgrade =
+            #           start the encode in a to_thread task during ringing for the preferred codec.
+            payload = await asyncio.to_thread(pcm_to_payload, pcm, rate, codec)  # CPU-bound: keep the loop free
+            log.debug("streaming %s audio to %s:%s", codec, *dest)
             hung_up = await call.stream_until_done(payload, dest, repeat, pt, leg)
             duration = time.monotonic() - started
             if hung_up:

@@ -26,6 +26,9 @@ REASONS = {
 }
 
 
+_NAMES = {0: "PCMU", 8: "PCMA", 9: "G722"}
+
+
 def _md5(s: str) -> str:
     return hashlib.md5(s.encode()).hexdigest()
 
@@ -94,14 +97,16 @@ class _Rtp(asyncio.DatagramProtocol):
 class FakeGoToServer:
     def __init__(self, username: str, password: str, behavior: str = "answer", ssl_context=None, *,
                  drop_first: int = 0, challenge_401: bool = False, record_route=(),
-                 resend_200: bool = False, bye_reply: int | None = 200):
+                 resend_200: bool = False, bye_reply: int | None = 200,
+                 answer_pt: int | None = None):
         """Options: drop_first = ignore the first N incoming requests (lossy link); challenge_401 =
         challenge with 401/WWW-Authenticate instead of 407; record_route = Record-Route values put
         on the 200 (ACK/BYE must then carry them as Route in reverse); resend_200 = send the 200
-        twice (lost ACK); bye_reply = status for the client's BYE (None = stay silent)."""
+        twice (lost ACK); bye_reply = status for the client's BYE (None = stay silent);
+        answer_pt = force the answered payload type (default: first offered of 0/8/9)."""
         assert behavior in BEHAVIORS, behavior
         self._drop_first, self._challenge_401, self._record_route = drop_first, challenge_401, list(record_route)
-        self._resend_200, self._bye_reply = resend_200, bye_reply
+        self._resend_200, self._bye_reply, self._answer_pt = resend_200, bye_reply, answer_pt
         self.ack_count = 0  # valid ACKs for the answered INVITE
         self.challenge_acks = 0  # ACKs for our 407/401 challenges
         self._challenge_tags: set[str] = set()
@@ -112,7 +117,7 @@ class FakeGoToServer:
         self.username, self.password, self.behavior = username, password, behavior
         self.registered = False
         self.invite_authenticated = False
-        self.rtp_packets: list[bytes] = []  # valid RTP only (v2, PT 8, >= 12 bytes)
+        self.rtp_packets: list[bytes] = []  # valid RTP only (v2, agreed PT, >= 12 bytes)
         self.got_ack = False
         self.got_bye = False
         self.got_cancel = False  # a CANCEL that actually cancelled the pending INVITE
@@ -127,7 +132,7 @@ class FakeGoToServer:
         self._sip = self._rtp = None
         self._host = "127.0.0.1"
         self._contact = ""
-        self._pt = 8  # payload type agreed in our answer: the offer's first codec (0 PCMU or 8 PCMA)
+        self._pt = 8  # payload type agreed in our answer (set in _answer)
 
     async def start(self) -> tuple[str, int]:
         loop = asyncio.get_running_loop()
@@ -279,8 +284,8 @@ class FakeGoToServer:
     async def _answer(self, msg, addr):
         loop = asyncio.get_running_loop()
         offered = (self.client_sdp or {}).get("codecs", [8])
-        self._pt = offered[0] if offered and offered[0] in (0, 8) else 8
-        name = "PCMU" if self._pt == 0 else "PCMA"
+        self._pt = self._answer_pt if self._answer_pt is not None else next((p for p in offered if p in _NAMES), 8)
+        name = _NAMES[self._pt]
         self._rtp, _ = await loop.create_datagram_endpoint(lambda: _Rtp(self), local_addr=(self._host, 0))
         port = self._rtp.get_extra_info("sockname")[1]
         sdp = (

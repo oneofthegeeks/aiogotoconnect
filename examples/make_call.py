@@ -3,7 +3,7 @@
     GOTO_SIP_USERNAME=... GOTO_SIP_PASSWORD=... python examples/make_call.py \
         --to +15551234567 --wav message.wav [--transport tls] [--verbose]
 
-The WAV should be 16-bit PCM mono; it is converted to G.711 before sending.
+The WAV should be 16-bit PCM mono; it is sent as G.722 wideband if GoTo accepts it, else G.711 PCMA.
 """
 import argparse
 import asyncio

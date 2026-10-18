@@ -8,6 +8,7 @@ import pytest
 
 from aiogotoconnect import CallResult, GoToAuthError, GoToSipError, GoToVoice
 from aiogotoconnect.sip import call as call_module
+from aiogotoconnect.sip.audio import wav_to_payload
 from fake_goto import FakeGoToServer
 
 
@@ -99,18 +100,69 @@ async def test_cancellation_mid_stream_hangs_up_and_leaves_no_tasks(fake):
     assert asyncio.all_tasks() - before == set()
 
 
-async def test_pcmu_call_sends_payload_type_0(fake):
+def test_remote_media_returns_pts():
+    sdp = "v=0\r\nc=IN IP4 10.0.0.9\r\nm=audio 4000 RTP/AVP 9 8 101\r\n"
+    assert call_module._remote_media(sdp) == ("10.0.0.9", 4000, (9, 8, 101))
+
+
+def test_codec_choice_skips_dtmf():
+    assert call_module._codec_from_answer((101, 9), ("g722", "pcma")) == "g722"
+
+
+def test_codec_choice_fallback_unknown():
+    assert call_module._codec_from_answer((18,), ("g722", "pcma")) == "g722"
+
+
+def test_codec_choice_respects_answer():
+    assert call_module._codec_from_answer((8,), ("g722", "pcma")) == "pcma"
+
+
+async def test_call_negotiates_g722(fake):
     server, voice = fake
-    result = await voice.call_and_play("+15551234567", _wav(0.5), codec="pcmu")
+    wav = _wav(0.5)
+    result = await voice.call_and_play("+15551234567", wav)
+    assert result.reason == "completed"
+    assert server.client_sdp["codecs"][:2] == [9, 8]
+    await _eventually(lambda: len(server.rtp_packets) >= 20)
+    assert all(p[1] & 0x7F == 9 for p in server.rtp_packets)
+    assert server.rtp_packets[0][12:] == wav_to_payload(wav, "g722")[:160]
+    assert not _errors(server)
+
+
+@pytest.mark.parametrize("fake", [("answer", {"answer_pt": 8})], indirect=True)
+async def test_call_falls_back_to_pcma(fake):
+    server, voice = fake
+    wav = _wav(0.5)
+    result = await voice.call_and_play("+15551234567", wav)
+    assert result.reason == "completed"
+    await _eventually(lambda: len(server.rtp_packets) >= 20)
+    assert all(p[1] & 0x7F == 8 for p in server.rtp_packets)
+    assert server.rtp_packets[0][12:] == wav_to_payload(wav, "pcma")[:160]
+    assert not _errors(server)
+
+
+async def test_single_codec_pcmu(fake):
+    server, voice = fake
+    result = await voice.call_and_play("+15551234567", _wav(0.5), codecs=("pcmu",))
     assert result.reason == "completed"
     assert server.client_sdp["codecs"][:1] == [0] and server.client_sdp["rtpmap"][0] == "PCMU/8000"
     await _eventually(lambda: len(server.rtp_packets) >= 20)
     assert all(p[1] & 0x7F == 0 for p in server.rtp_packets)
 
 
-async def test_unknown_codec_rejected(fake):
+@pytest.mark.parametrize("codecs", [(), ("mp3",), ("g722", "mp3")])
+async def test_bad_codecs_fail_fast(fake, codecs):
+    server, voice = fake
     with pytest.raises(ValueError):
-        await fake[1].call_and_play("+15551234567", _wav(0.5), codec="opus")
+        await voice.call_and_play("+15551234567", _wav(0.5), codecs=codecs)
+    assert server.log == []
+
+
+async def test_bad_wav_fails_fast(fake):
+    server, voice = fake
+    with pytest.raises(ValueError):
+        await voice.call_and_play("+15551234567", b"not a wav")
+    assert server.log == []
 
 
 def _tls_contexts(tmp_path):

@@ -5,7 +5,7 @@ import wave
 
 import pytest
 
-from aiogotoconnect.sip.audio import wav_to_g711
+from aiogotoconnect.sip.audio import wav_pcm, wav_to_payload
 
 
 def make_wav(rate: int, channels: int, width: int, seconds: float = 1.0) -> bytes:
@@ -35,13 +35,13 @@ def make_wav(rate: int, channels: int, width: int, seconds: float = 1.0) -> byte
     [(44100, 2, 2), (8000, 1, 2), (22050, 1, 1), (16000, 1, 3)],
 )
 def test_output_length_is_one_byte_per_8khz_sample(rate, channels, width):
-    out = wav_to_g711(make_wav(rate, channels, width, seconds=1.0), "pcma")
+    out = wav_to_payload(make_wav(rate, channels, width, seconds=1.0), "pcma")
     assert abs(len(out) - 8000) <= 80  # within 1% of 1 s at 8 kHz mono
 
 
 def test_pcma_and_pcmu_encode_differently():
     wav = make_wav(8000, 1, 2)
-    assert wav_to_g711(wav, "pcma") != wav_to_g711(wav, "pcmu")
+    assert wav_to_payload(wav, "pcma") != wav_to_payload(wav, "pcmu")
 
 
 def test_silence_encodes_to_codec_zero_codes():
@@ -54,23 +54,23 @@ def test_silence_encodes_to_codec_zero_codes():
         wf.setframerate(8000)
         wf.writeframes(silent_frames)
     silent_wav = buf.getvalue()
-    assert set(wav_to_g711(silent_wav, "pcma")) == {0xD5}
-    assert set(wav_to_g711(silent_wav, "pcmu")) == {0xFF}
+    assert set(wav_to_payload(silent_wav, "pcma")) == {0xD5}
+    assert set(wav_to_payload(silent_wav, "pcmu")) == {0xFF}
 
 
 def test_default_codec_is_pcma():
     wav = make_wav(8000, 1, 2)
-    assert wav_to_g711(wav) == wav_to_g711(wav, "pcma")
+    assert wav_to_payload(wav) == wav_to_payload(wav, "pcma")
 
 
 def test_non_wav_bytes_raise_value_error():
     with pytest.raises(ValueError):
-        wav_to_g711(b"this is not a wav file", "pcma")
+        wav_to_payload(b"this is not a wav file", "pcma")
 
 
 def test_unknown_codec_raises_value_error():
     with pytest.raises(ValueError):
-        wav_to_g711(make_wav(8000, 1, 2), "opus")
+        wav_to_payload(make_wav(8000, 1, 2), "opus")
 
 
 def test_8bit_silence_is_unsigned_midpoint_so_encodes_to_alaw_zero():
@@ -81,7 +81,7 @@ def test_8bit_silence_is_unsigned_midpoint_so_encodes_to_alaw_zero():
         wf.setsampwidth(1)
         wf.setframerate(8000)
         wf.writeframes(b"\x80" * 8000)
-    assert set(wav_to_g711(buf.getvalue(), "pcma")) == {0xD5}
+    assert set(wav_to_payload(buf.getvalue(), "pcma")) == {0xD5}
 
 
 def test_zero_frame_wav_raises_value_error():
@@ -91,4 +91,31 @@ def test_zero_frame_wav_raises_value_error():
         wf.setsampwidth(2)
         wf.setframerate(8000)
     with pytest.raises(ValueError):
-        wav_to_g711(buf.getvalue())
+        wav_to_payload(buf.getvalue())
+
+
+def test_g722_payload_rate():
+    out = wav_to_payload(make_wav(16000, 1, 2), "g722")
+    assert abs(len(out) - 8000) <= 80  # one byte per 2 samples @ 16 kHz
+
+
+def test_g722_resamples_hifi():
+    out = wav_to_payload(make_wav(44100, 2, 2), "g722")
+    assert abs(len(out) - 8000) <= 80
+
+
+def test_unknown_codec_lists_g722():
+    with pytest.raises(ValueError, match="g722"):
+        wav_to_payload(make_wav(8000, 1, 2), "opus")
+
+
+def test_wav_pcm_validates():
+    with pytest.raises(ValueError):
+        wav_pcm(b"garbage")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(8000)
+    with pytest.raises(ValueError):
+        wav_pcm(buf.getvalue())

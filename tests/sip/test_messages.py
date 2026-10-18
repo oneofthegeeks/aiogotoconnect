@@ -4,6 +4,7 @@ import pytest
 
 from aiogotoconnect.exceptions import GoToSipError
 from aiogotoconnect.sip.messages import (
+    PT_CODECS,
     SipDialog,
     SipResponse,
     build_ack,
@@ -82,6 +83,35 @@ def test_invite_sdp_and_length():
     for line in ("m=audio 40000 RTP/AVP 8 101", "a=rtpmap:8 PCMA/8000", "a=rtpmap:101 telephone-event/8000",
                  "c=IN IP4 10.0.0.5"):
         assert line in body.split("\r\n")
+
+
+def _sdp_lines(codecs):
+    raw = build_invite(**ARGS, to_number="+15559876543", media_port=40000, dialog=SipDialog(), codecs=codecs)
+    return raw.decode().split("\r\n\r\n")[1].split("\r\n")
+
+
+def test_sdp_offers_g722_and_pcma():
+    lines = _sdp_lines(("g722", "pcma"))
+    assert "m=audio 40000 RTP/AVP 9 8 101" in lines
+    assert "a=rtpmap:9 G722/8000" in lines
+    assert "a=rtpmap:8 PCMA/8000" in lines
+
+
+def test_g722_rtpmap_clock_is_8000():
+    lines = _sdp_lines(("g722",))
+    assert "a=rtpmap:9 G722/8000" in lines
+    assert not any("G722/16000" in line for line in lines)
+
+
+def test_sdp_single_codec_unchanged():
+    lines = _sdp_lines(("pcma",))
+    assert lines[5:7] == ["m=audio 40000 RTP/AVP 8 101", "a=rtpmap:8 PCMA/8000"]
+    assert lines[7:] == ["a=ptime:20", "a=sendrecv", "a=rtpmap:101 telephone-event/8000",
+                         "a=fmtp:101 0-15", ""]
+
+
+def test_pt_codecs_reverse_map():
+    assert PT_CODECS == {0: "pcmu", 8: "pcma", 9: "g722"}
 
 
 def test_ack_bye_cancel():

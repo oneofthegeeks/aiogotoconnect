@@ -63,7 +63,7 @@ All library errors derive from `GoToError`:
 - `GoToSipError`: SIP registration/signalling failed, including network failures (timeouts, DNS, TLS errors are wrapped, never raised raw).
   - `GoToCallError`: the call itself failed (e.g. 4xx/5xx to the INVITE, no usable SDP).
 
-Bad arguments raise plain `ValueError` before any network traffic: an invalid destination number, a WAV that is unreadable, empty or has more than two channels, or an unknown `codec`.
+Bad arguments raise plain `ValueError` before any network traffic: an invalid destination number, a WAV that is unreadable, empty or has more than two channels, or an empty/unknown `codecs` entry (default `("g722", "pcma")`; the codec is picked from the server's answer).
 
 ### Create the SIP device in GoTo
 

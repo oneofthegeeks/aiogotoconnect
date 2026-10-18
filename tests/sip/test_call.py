@@ -119,11 +119,13 @@ def test_codec_choice_respects_answer():
 
 async def test_call_negotiates_g722(fake):
     server, voice = fake
-    result = await voice.call_and_play("+15551234567", _wav(0.5))
+    wav = _wav(0.5)
+    result = await voice.call_and_play("+15551234567", wav)
     assert result.reason == "completed"
     assert server.client_sdp["codecs"][:2] == [9, 8]
     await _eventually(lambda: len(server.rtp_packets) >= 20)
     assert all(p[1] & 0x7F == 9 for p in server.rtp_packets)
+    assert server.rtp_packets[0][12:] == wav_to_payload(wav, "g722")[:160]
     assert not _errors(server)
 
 

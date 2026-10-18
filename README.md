@@ -46,6 +46,8 @@ async def main():
 asyncio.run(main())
 ```
 
+Audio is sent as G.722 wideband when GoTo accepts it, else G.711 PCMA; pass `codecs=("pcmu",)` to force PCMU.
+
 `reason` is one of `completed`, `remote-hangup`, `no-answer`, `busy`, `rejected`. `bye_confirmed` is `False` only when we hung up but the server never answered (or refused) our BYE, so the far side may still think the call is up; it is `True` when no BYE was needed or it was confirmed. Bad SIP credentials raise `GoToAuthError`.
 
 UDP requests are retransmitted (0.5 s, 1 s, 2 s, ...) until the server responds, and the Record-Route set from the answer is honoured on the ACK and BYE. Cancelling the `call_and_play` task hangs up (or CANCELs a ringing call) before the cancellation propagates.

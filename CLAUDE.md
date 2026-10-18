@@ -23,13 +23,14 @@ pytest: `.venv/bin/python -m pytest -W error`. All protocol tests run against a 
 Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the `pypi` environment PAUSES for Taylor's manual approval in the Actions UI -> PyPI trusted publishing. Main is PR-only (required checks: test 3.12 + 3.13); work lands via PRs Taylor merges. No Docker - it's a library.
 
 ## Key Files
-`src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
+`src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711/G.722 payload), `sip/g722.py` (pure-Python G.722 encoder; decoder is test-only), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
 
 ## Gotchas
 - GoTo challenges with 407 (Proxy-Authenticate), not 401; 401 is handled too.
 - The From user must be the SIP username, never the local IP.
 - REGISTER and INVITE use distinct Call-IDs; the digest nonce is bound per method.
-- PCMA/8000 is the default codec (PCMU opt-in); SDP also offers telephone-event/101.
+- `call_and_play(codecs=("g722", "pcma"))` is the default offer (one m= line, plus telephone-event/101); PCMU is opt-in via `codecs=("pcmu",)`. The payload is encoded after the 200 OK with the codec GoTo answered.
+- G.722 rtpmap is `G722/8000` (RFC 3551 quirk: RTP clock is 8 kHz though sampling is 16 kHz), so `sip/rtp.py` is unchanged: 160 bytes / 160 ticks per 20 ms frame.
 - `audioop` deprecation warning is suppressed at import on 3.12 (audioop-lts on 3.13+).
 - REGISTER happens per call (no persistent registration).
 - TLS defaults to verified system CAs; tests inject a self-signed context via `ssl_context`.

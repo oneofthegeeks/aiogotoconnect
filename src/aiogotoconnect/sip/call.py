@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)  # start-lines/status codes only: never header
 
 _REPLY_TIMEOUT = 5.0  # non-INVITE transactions and post-CANCEL/BYE waits
 _GAP_SECONDS = 0.5  # pause between repeats of the audio
+_TAIL_SILENCE_SECONDS = 0.3  # silence appended after the message; see call_and_play
 _REFUSALS = {486: "busy", 603: "rejected"}
 
 
@@ -320,16 +321,22 @@ class GoToVoice:
                             codecs: Sequence[str] = ("g722", "pcma")) -> CallResult:
         _check_number(number)  # fail before touching the network
         pcm, rate = wav_pcm(wav_bytes)  # bad WAV -> ValueError before any network I/O
+        # Trailing silence drains the far-end jitter buffer before our BYE stops playback;
+        # without it the last word arrives clipped (confirmed on a live call).
+        pcm += b"\x00\x00" * int(rate * _TAIL_SILENCE_SECONDS)
         if not codecs or any(c not in CODEC_PAYLOADS for c in codecs):
             raise ValueError(f"codecs must be a non-empty subset of {', '.join(CODEC_PAYLOADS)}; got {tuple(codecs)!r}")
         tp = make_transport(self.proxy or self.server, self.transport, self.port, self.ssl_context)
-        rtp = call = leg = None
+        rtp = call = leg = encode = None
         acked = bye_sent = False
         try:
             await tp.connect()
             rtp = RtpSender()  # bound now so the INVITE's SDP carries the real port
             call = _Call(tp, self.transport, self.username, self.password, self.server, number, rtp)
             await call.register()
+            # Speculative encode of the preferred codec while the phone rings (pure CPU on
+            # immutable bytes in a thread; a wasted result on a different answer is harmless).
+            encode = asyncio.create_task(asyncio.to_thread(pcm_to_payload, pcm, rate, codecs[0]))
             dialog, resp, branch, bye_ok = await call.invite(ring_timeout, codecs)
             if resp is None:
                 return CallResult(False, 0.0, "no-answer", bye_ok)
@@ -349,9 +356,10 @@ class GoToVoice:
             dest = (ip, rtp_port)
             codec = _codec_from_answer(answered, codecs)
             pt = CODEC_PAYLOADS[codec][0]
-            # ponytail: callee hears ~0.1 s dead air per 1 s of audio while G.722 encodes; upgrade =
-            #           start the encode in a to_thread task during ringing for the preferred codec.
-            payload = await asyncio.to_thread(pcm_to_payload, pcm, rate, codec)  # CPU-bound: keep the loop free
+            if codec == codecs[0]:
+                payload = await encode  # usually already finished while the phone rang
+            else:
+                payload = await asyncio.to_thread(pcm_to_payload, pcm, rate, codec)
             log.debug("streaming %s audio to %s:%s", codec, *dest)
             hung_up = await call.stream_until_done(payload, dest, repeat, pt, leg)
             duration = time.monotonic() - started
@@ -365,6 +373,13 @@ class GoToVoice:
         except OSError as exc:  # TimeoutError, gaierror, ConnectionError, ssl.SSLError ...
             raise GoToSipError(f"SIP I/O failure: {type(exc).__name__}: {exc}") from exc
         finally:
+            if encode is not None:
+                if not encode.done():
+                    encode.cancel()
+                try:  # reap the speculative encode so no exception is left unretrieved
+                    await encode
+                except (Exception, asyncio.CancelledError):
+                    pass
             if acked and not bye_sent:
                 try:  # best-effort hangup so the callee isn't left off-hook; no wait for its 200
                     await call.send(call.bye(leg))

@@ -150,6 +150,37 @@ async def test_single_codec_pcmu(fake):
     assert all(p[1] & 0x7F == 0 for p in server.rtp_packets)
 
 
+async def test_trailing_silence_pad(fake):
+    """0.3 s of silence streams after the message so the far-end jitter buffer drains
+    before the BYE stops playback (heard live as a clipped final word)."""
+    server, voice = fake
+    wav = _wav(0.5)
+    result = await voice.call_and_play("+15551234567", wav, codecs=("pcma",))
+    assert result.reason == "completed"
+    frames = len(wav_to_payload(wav, "pcma")) // 160  # the message itself: 25 frames
+    await _eventually(lambda: len(server.rtp_packets) >= frames + 15)
+    assert len(server.rtp_packets) == frames + 15  # exactly +0.3 s (15 frames) of silence
+    assert server.rtp_packets[-1][12:] == bytes([0xD5]) * 160  # a-law zero
+
+
+@pytest.mark.parametrize("fake", [("answer", {"answer_pt": 8})], indirect=True)
+async def test_preencode_during_ring_reencodes_on_mismatch(fake, monkeypatch):
+    """The preferred codec is encoded speculatively while the phone rings; an answer
+    that picks a different codec triggers exactly one re-encode with that codec."""
+    server, voice = fake
+    seen = []
+    real = call_module.pcm_to_payload
+
+    def spy(pcm, rate, codec):
+        seen.append(codec)
+        return real(pcm, rate, codec)
+
+    monkeypatch.setattr(call_module, "pcm_to_payload", spy)
+    result = await voice.call_and_play("+15551234567", _wav(0.5))
+    assert result.reason == "completed"
+    assert seen == ["g722", "pcma"]  # speculative g722 first, pcma after the answer
+
+
 @pytest.mark.parametrize("codecs", [(), ("mp3",), ("g722", "mp3")])
 async def test_bad_codecs_fail_fast(fake, codecs):
     server, voice = fake

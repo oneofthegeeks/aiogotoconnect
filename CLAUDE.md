@@ -1,6 +1,6 @@
 # aiogotoconnect
 
-Live: v0.2.0 (2026-10-18) — renamed from gotoconnect (unofficial-client naming); same code as the live-smoked v0.1.0.
+Live: v0.3.0 (2026-10-18) — G.722 wideband + SDP answer negotiation (breaking: `codec=` → `codecs=`); live-smoked: GoTo answers G.722 for these SIP devices.
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.

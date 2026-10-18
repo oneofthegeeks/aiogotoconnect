@@ -1,6 +1,6 @@
-# gotoconnect
+# aiogotoconnect
 
-Live: v0.1.0 (2026-10-17) — first PyPI release; live-smoked against GoTo (UDP; registrar reg.jiveip.net + per-account proxy).
+Live: v0.2.0 (2026-10-18) — renamed from gotoconnect (unofficial-client naming); same code as the live-smoked v0.1.0.
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.
@@ -10,7 +10,7 @@ Python >=3.12, aiohttp, audioop-lts on 3.13+, pure-asyncio SIP + RTP, pytest (py
 
 ## Local Development
 ```bash
-git clone git@github.com:oneofthegeeks/gotoconnect.git && cd gotoconnect
+git clone git@github.com:oneofthegeeks/aiogotoconnect.git && cd aiogotoconnect
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest -v -W error
@@ -23,7 +23,7 @@ pytest: `.venv/bin/python -m pytest -W error`. All protocol tests run against a 
 Tag `vX.Y.Z` -> GitHub Actions `publish.yml` -> PyPI trusted publishing. No Docker - it's a library.
 
 ## Key Files
-`src/gotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
+`src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
 
 ## Gotchas
 - GoTo challenges with 407 (Proxy-Authenticate), not 401; 401 is handled too.

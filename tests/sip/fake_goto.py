@@ -1,6 +1,6 @@
 """Fake GoTo SIP server for tests.
 
-Deliberately an independent reimplementation: it imports nothing from gotoconnect.sip,
+Deliberately an independent reimplementation: it imports nothing from aiogotoconnect.sip,
 so a bug in the library's message/digest code can't be mirrored here and hidden.
 Single-call; UDP by default, SIP over TLS when given an ``ssl_context`` (RTP is always UDP). Mimics the proven GoTo behavior: 407 (not 401) challenges on
 REGISTER and INVITE, then per ``behavior`` answer / busy / no_answer /

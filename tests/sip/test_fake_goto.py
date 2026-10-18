@@ -1,6 +1,6 @@
 """Self-check for the fake GoTo server, driven by a raw-socket client.
 
-Deliberately independent of gotoconnect.sip: the client here builds SIP text by hand
+Deliberately independent of aiogotoconnect.sip: the client here builds SIP text by hand
 and computes the digest with hashlib.
 """
 import asyncio

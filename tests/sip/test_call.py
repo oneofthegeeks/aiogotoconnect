@@ -6,8 +6,8 @@ import wave
 
 import pytest
 
-from gotoconnect import CallResult, GoToAuthError, GoToSipError, GoToVoice
-from gotoconnect.sip import call as call_module
+from aiogotoconnect import CallResult, GoToAuthError, GoToSipError, GoToVoice
+from aiogotoconnect.sip import call as call_module
 from fake_goto import FakeGoToServer
 
 
@@ -191,7 +191,7 @@ async def test_route_set_on_ack_and_bye(fake):
 
 @pytest.mark.parametrize("fake", [("answer", {"bye_reply": 481})], indirect=True)
 async def test_refused_bye_is_reported(fake, caplog):
-    caplog.set_level("WARNING", logger="gotoconnect")
+    caplog.set_level("WARNING", logger="aiogotoconnect")
     result = await fake[1].call_and_play("+15551234567", _wav(0.3))
     assert result.reason == "completed" and not result.bye_confirmed
     assert "BYE refused" in caplog.text
@@ -250,7 +250,7 @@ async def test_invite_challenged_forever_raises_auth_error(fake):
 
 
 async def test_debug_logs_show_start_lines_only(fake, caplog):
-    caplog.set_level("DEBUG", logger="gotoconnect")
+    caplog.set_level("DEBUG", logger="aiogotoconnect")
     await fake[1].call_and_play("+15551234567", _wav(0.3))
     assert "SIP -> REGISTER" in caplog.text and "SIP <- SIP/2.0 407" in caplog.text
     assert "registered" in caplog.text and "answered" in caplog.text

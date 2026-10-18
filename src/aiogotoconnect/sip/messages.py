@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from gotoconnect.exceptions import GoToSipError
+from aiogotoconnect.exceptions import GoToSipError
 
 CRLF = "\r\n"
 # codec -> (RTP payload type, rtpmap name)

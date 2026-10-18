@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 import aiohttp
 
-from gotoconnect.exceptions import GoToAuthError
+from aiogotoconnect.exceptions import GoToAuthError
 
 # Any async callable returning a bearer token. Home Assistant passes its own.
 TokenProvider = Callable[[], Awaitable[str]]

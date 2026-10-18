@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 
 from aiogotoconnect.exceptions import GoToAuthError, GoToCallError, GoToSipError
-from aiogotoconnect.sip.audio import wav_to_g711
+from aiogotoconnect.sip.audio import wav_to_payload
 from aiogotoconnect.sip.messages import (
     CODEC_PAYLOADS,
     SipDialog,
@@ -307,7 +307,7 @@ class GoToVoice:
     async def call_and_play(self, number: str, wav_bytes: bytes, *, ring_timeout: float = 25.0,
                             repeat: int = 1, codec: str = "pcma") -> CallResult:
         _check_number(number)  # fail before touching the network
-        payload = wav_to_g711(wav_bytes, codec)  # also rejects unknown codecs (ValueError)
+        payload = wav_to_payload(wav_bytes, codec)  # also rejects unknown codecs (ValueError)
         pt = CODEC_PAYLOADS[codec][0]
         tp = make_transport(self.proxy or self.server, self.transport, self.port, self.ssl_context)
         rtp = call = leg = None

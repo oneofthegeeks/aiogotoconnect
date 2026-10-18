@@ -17,12 +17,19 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     import audioop
 
-CODEC_RATES = {"pcma": 8000, "pcmu": 8000, "g722": 16000}
-_ENCODERS = {
-    "pcma": lambda pcm: audioop.lin2alaw(pcm, 2),
-    "pcmu": lambda pcm: audioop.lin2ulaw(pcm, 2),
-    "g722": g722.encode,
+# codec -> (target sample rate, PCM encoder)
+CODECS = {
+    "pcma": (8000, lambda pcm: audioop.lin2alaw(pcm, 2)),
+    "pcmu": (8000, lambda pcm: audioop.lin2ulaw(pcm, 2)),
+    "g722": (16000, g722.encode),
 }
+
+
+def _codec(codec: str):
+    try:
+        return CODECS[codec]
+    except KeyError:
+        raise ValueError(f"unknown codec {codec!r}; expected one of {', '.join(CODECS)}") from None
 
 
 def wav_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
@@ -53,10 +60,7 @@ def wav_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
 
 def pcm_to_payload(pcm: bytes, rate: int, codec: str) -> bytes:
     """Resample 16-bit mono PCM to the codec's rate and encode it."""
-    encode = _ENCODERS.get(codec)
-    if encode is None:
-        raise ValueError(f"unknown codec {codec!r}; expected one of {', '.join(CODEC_RATES)}")
-    target = CODEC_RATES[codec]
+    target, encode = _codec(codec)
     if rate != target:
         pcm, _ = audioop.ratecv(pcm, 2, 1, rate, target, None)
     return encode(pcm)
@@ -64,7 +68,6 @@ def pcm_to_payload(pcm: bytes, rate: int, codec: str) -> bytes:
 
 def wav_to_payload(wav_bytes: bytes, codec: str = "pcma") -> bytes:
     """Convert WAV bytes to mono payload bytes for `codec` (pcma, pcmu or g722)."""
-    if codec not in CODEC_RATES:  # fail on the codec before parsing, as before
-        raise ValueError(f"unknown codec {codec!r}; expected one of {', '.join(CODEC_RATES)}")
+    _codec(codec)  # fail on the codec before parsing, as before
     pcm, rate = wav_pcm(wav_bytes)
     return pcm_to_payload(pcm, rate, codec)

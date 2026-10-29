@@ -92,7 +92,7 @@ class GoToHttp:
             return {}
         try:
             return json.loads(text)
-        except ValueError:
+        except (ValueError, RecursionError):  # RecursionError: deeply nested `[[[[...`
             # Fixed text: the body may hold PII (numbers, message text) and errors get logged (C22).
             raise GoToApiError(status, "Malformed JSON response") from None
 

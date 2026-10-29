@@ -37,6 +37,9 @@ BASE_ENV = {"GOTO_CLIENT_ID": "cid", "GOTO_CLIENT_SECRET": "csecret"}
 SILENT = logging.getLogger("aiogotoconnect.sms.test_oauth")
 HOUR_MS = 3600_000
 
+# A JSON body nested deep enough that json.loads raises RecursionError.
+DEEP = "[" * 100_000 + "]" * 100_000
+
 
 @dataclass
 class Clock:
@@ -660,6 +663,12 @@ async def test_token_endpoint_non_2xx_reports_status_and_oauth_code_only(
         await r.auth.get_access_token()
     assert e.value.body == "GoTo token endpoint returned 404"
 
+    # Nesting deep enough to raise RecursionError is treated like any non-JSON body.
+    r.fake.fail_next("POST", "/oauth/token", 404, DEEP)
+    with pytest.raises(GoToApiError) as e:
+        await r.auth.get_access_token()
+    assert e.value.body == "GoTo token endpoint returned 404"
+
 
 @pytest.mark.parametrize(
     "body",
@@ -673,6 +682,7 @@ async def test_token_endpoint_non_2xx_reports_status_and_oauth_code_only(
         {"access_token": "a", "expires_in": None},
         {"access_token": "a", "refresh_token": None},
         '{"access_token":"a","expires_in":NaN}',
+        DEEP,
     ],
 )
 async def test_malformed_token_response(setup: RigFactory, body: Any) -> None:
@@ -703,6 +713,15 @@ async def test_http_malformed_2xx_body_not_echoed(setup: RigFactory) -> None:
         await r.http().json("GET", "/garbled")
     assert e.value.body == "Malformed JSON response"
     assert "8015550123" not in f"{e.value} {e.value.body}"
+
+
+async def test_http_deeply_nested_2xx_body_is_malformed_json(setup: RigFactory) -> None:
+    r = await setup()
+    await r.connect()
+    r.fake.route("GET", "/deep", lambda _req: FakeResponse(200, DEEP))
+    with pytest.raises(GoToApiError) as e:
+        await r.http().json("GET", "/deep")
+    assert e.value.body == "Malformed JSON response"
 
 
 async def test_verify_refreshes_even_when_fresh_and_seeds_when_pending(setup: RigFactory) -> None:

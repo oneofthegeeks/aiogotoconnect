@@ -90,7 +90,7 @@ def _oauth_error(text: str) -> str:
     """' (error: invalid_request)' from an OAuth error body, or '' when absent or odd-looking."""
     try:
         body = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: deeply nested `[[[[...`
         return ""
     e = body.get("error") if isinstance(body, dict) else None
     return f" (error: {e})" if isinstance(e, str) and OAUTH_ERROR_FORMAT.fullmatch(e) else ""
@@ -494,7 +494,7 @@ class GoToAuth:
 
         try:
             body = json.loads(text, parse_constant=_reject_constant)
-        except ValueError:
+        except (ValueError, RecursionError):
             raise malformed() from None
         if not isinstance(body, dict):
             raise malformed()

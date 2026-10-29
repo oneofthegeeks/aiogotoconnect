@@ -376,7 +376,7 @@ class GoToSms:
         """Stops polling and the lock refresh, waits for in-flight work (a poll, post-204 inbound
         processing, maintenance) so nothing writes to the store afterwards, releases the process
         lock if it's still ours, and closes the aiohttp session if this instance created it.
-        Idempotent; a no-op before start()."""
+        Idempotent; a no-op before start(), after which start() and send() raise code "closed"."""
         self._closed = True
         task = self._start_task
         if task is not None and not task.done():

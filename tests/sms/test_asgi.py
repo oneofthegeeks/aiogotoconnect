@@ -284,6 +284,19 @@ async def test_the_page_and_status_still_answer_when_startup_failed(
     assert await sms.status() == status
 
 
+async def test_a_forgotten_lifespan_first_request_shows_the_startup_error(
+    cleanups: Cleanups,
+) -> None:
+    # Nobody called start(): the first request starts it, and the failure is on the page.
+    sms = bare(authorize=lambda _r: True)
+    cleanups.append(sms.close)
+    client = client_for(host_with("/goto-sms", sms.asgi_app()), cleanups)
+    res = await client.get("/goto-sms/api/status")
+    assert res.status_code == 200
+    assert res.json()["startupError"] == NO_KEY
+    assert (await client.get("/goto-sms/")).status_code == 200
+
+
 async def test_authorize_still_applies_when_startup_failed(cleanups: Cleanups) -> None:
     sms = bare(authorize=lambda _r: False)
     cleanups.append(sms.close)

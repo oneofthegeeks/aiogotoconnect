@@ -234,6 +234,13 @@ class GoToSms:
         """The started Core (internal; the deferred handlers' `core` callable)."""
         task = self._start_task
         if task is None:
+            # Closed before any start: building now would claim the lock and open a session that
+            # nothing closes. Not a blanket guard: after a start, close() sets _closed before it
+            # waits for in-flight inbound work, and a message handler may still send meanwhile.
+            if self._closed:
+                raise GoToSmsError(
+                    "goto-sms: this instance is closed; create a new instance", "closed"
+                )
             task = asyncio.get_running_loop().create_task(self._start())
             task.add_done_callback(self._start_done)
             self._start_task = task
@@ -269,8 +276,11 @@ class GoToSms:
         logger, tenant, now = self._logger, self._tenant, o.now
         key, source = await resolve_encryption_key(self._encryption_key, o.env, o.data_dir, logger)
         box = SecretBox(key)
-        store = self._store or FileStore(
-            Path(o.data_dir or "./data") / "goto-sms.json", now, logger
+        # `is not None`: a custom store may be falsy (an empty one defining __len__).
+        store = (
+            self._store
+            if self._store is not None
+            else FileStore(Path(o.data_dir or "./data") / "goto-sms.json", now, logger)
         )
         session = self._given_session
         if session is None:
@@ -625,7 +635,9 @@ def create_goto_sms(
         )
     # A custom store and no data_dir means there is nowhere for a keyfile: the key must then
     # come from the option or env (resolve_encryption_key raises NotConfiguredError).
-    resolved_dir = os.fspath(data_dir) if data_dir is not None else (None if store else "./data")
+    resolved_dir = (
+        os.fspath(data_dir) if data_dir is not None else (None if store is not None else "./data")
+    )
     options = ResolvedOptions(
         public_url=resolved_url,
         mount_path=mount,

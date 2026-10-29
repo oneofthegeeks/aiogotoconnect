@@ -81,7 +81,7 @@ Things to know:
 - **Authorization is required.** `asgi_app()` raises `RuntimeError` without `authorize`, unless you pass `allow_unauthenticated_setup=True` (refused when `GOTO_SMS_ENV=production`). The OAuth callback and the GoTo webhook are exempt from `authorize`.
 - **Polling starts after `start()`.** Mounted sub-apps do not get ASGI lifespan events, so use the host's lifespan as above. If you forget, the ASGI app calls `start()` on its first request, but nothing polls (and nothing is replayed) until then. `async with sms` logs a startup failure and lets the app boot so the setup page can show the reason; `await sms.start()` raises it.
 - **Handlers run one at a time with no timeout.** Sync and async handlers are called in order, per message; an exception is logged and the message stays processed. An async handler that hangs blocks processing of later texts, so do slow work in a background task.
-- **One process per store.** A second process on the same store is refused.
+- **One process per store.** The store holds a lock that each process re-claims every 30 seconds. A second process that cannot get it logs a warning (`Another process is using this goto-sms store`) and keeps going: nothing is gated on the lock, so it still polls, replays pending texts and sends. Two processes can therefore both deliver the same inbound text to their handlers. Run one process per store.
 - **Webhooks are account-wide.** GoTo `INBOUND_MESSAGE` subscriptions cover the whole account: every app on it is sent texts addressed to every number. The package drops a text whose `to` is not the configured `from_number`. When GoTo creates the webhook channel it sends `OPTIONS` to the URL and needs a 2xx; `OPTIONS /inbound/:secret` answers 200 whenever the secret matches.
 - `GoToApiError` here is not the top-level `aiogotoconnect.GoToApiError`; import the SMS errors from `aiogotoconnect.sms`.
 
@@ -93,7 +93,7 @@ All keyword-only. Credentials fall back to the environment variables below; empt
 |---|---|---|
 | `public_url` | `GOTO_SMS_PUBLIC_URL` | Public origin; the OAuth redirect and webhook URL are built from it. Trailing slashes are trimmed. |
 | `mount_path` | `"/goto-sms"` | Where you mount the app. `""` or `"/"` is the root. |
-| `data_dir` | `"./data"` | Holds the default file store and the key file. |
+| `data_dir` | `"./data"` when no `store` is passed | Holds the default file store and the key file. With a custom `store` and no `data_dir` there is no key file, so set `encryption_key` or `GOTO_SMS_ENCRYPTION_KEY`. |
 | `store` | file store in `data_dir` | `FileStore`, `SqliteStore` (table `goto_sms_kv`), `MemoryStore` or your own `GoToSmsStore`. |
 | `tenant` | `"default"` | Namespaces keys in a shared store. |
 | `authorize` | none | `(request) -> bool` or awaitable. |

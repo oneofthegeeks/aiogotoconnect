@@ -573,7 +573,7 @@ def create_goto_sms(
     env: Mapping[str, str] | None = None,
     now: Callable[[], float] | None = None,
 ) -> GoToSms:
-    """Creates the facade. Validation runs here, synchronously (link options, the production
+    """Creates the facade. Validation runs here, synchronously (link options, the log_only production
     guards); the async work waits for start(). Intervals are seconds; `now` returns epoch ms."""
     _require_cryptography()
     env = os.environ if env is None else env
@@ -584,18 +584,12 @@ def create_goto_sms(
     mount = _normalize_mount(mount_path)
     back = _link_option("back_url", back_url)
     login = _link_option("login_url", login_url)
-    production = env.get("GOTO_SMS_ENV") == "production"
-    if log_only and production:
+    # allow_unauthenticated_setup is checked by asgi_app() (assert_setup_auth), as Node's router().
+    if log_only and env.get("GOTO_SMS_ENV") == "production":
         raise GoToSmsError(
             "log_only mode would silently drop every text, so it is refused when "
             "GOTO_SMS_ENV=production",
             "log_only_in_production",
-        )
-    if allow_unauthenticated_setup and production:
-        raise GoToSmsError(
-            "allow_unauthenticated_setup=True is a development-only escape hatch, so it is "
-            "refused when GOTO_SMS_ENV=production",
-            "unauthenticated_setup_in_production",
         )
     # A custom store and no data_dir means there is nowhere for a keyfile: the key must then
     # come from the option or env (resolve_encryption_key raises NotConfiguredError).

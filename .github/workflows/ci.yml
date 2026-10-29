@@ -20,3 +20,14 @@ jobs:
       - run: ruff format --check src/aiogotoconnect/sms tests/sms
       - run: mypy
       - run: pytest
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[dev,sms]
+      - run: python -m playwright install --with-deps chromium
+      - run: pytest e2e

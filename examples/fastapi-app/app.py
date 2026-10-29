@@ -20,8 +20,13 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from aiogotoconnect.sms import InboundMessage, create_goto_sms
-from aiogotoconnect.sms.core import DEFAULT_API_BASE, DEFAULT_AUTH_BASE, AuthorizeRequest
+from aiogotoconnect.sms import (
+    DEFAULT_API_BASE,
+    DEFAULT_AUTH_BASE,
+    AuthorizeRequest,
+    InboundMessage,
+    create_goto_sms,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("example")

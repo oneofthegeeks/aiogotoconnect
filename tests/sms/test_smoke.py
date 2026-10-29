@@ -16,6 +16,21 @@ PUBLIC = [
     "SendFailedError",
     "NotConfiguredError",
 ]
+TYPES = [
+    "GoToSmsStore",
+    "Json",
+    "Authorize",
+    "AuthorizeRequest",
+    "IncomingMode",
+    "StatusPayload",
+    "IncomingError",
+    "ConfigField",
+    "Source",
+    "OptOutSource",
+    "KeywordReplies",
+    "DEFAULT_AUTH_BASE",
+    "DEFAULT_API_BASE",
+]
 INTERNAL = [
     "GoToAuth",
     "Sender",
@@ -51,3 +66,29 @@ def test_top_level_lazy_exports_resolve_to_the_sms_objects() -> None:
     assert "GoToSms" in aiogotoconnect.__all__
     # The sms GoToApiError is not re-exported at top level (it would shadow the existing one).
     assert aiogotoconnect.GoToApiError is not sms_pkg.GoToApiError
+
+
+def test_public_types_and_defaults_import_from_the_sms_package() -> None:
+    from aiogotoconnect.sms import (  # noqa: F401
+        DEFAULT_API_BASE,
+        DEFAULT_AUTH_BASE,
+        Authorize,
+        AuthorizeRequest,
+        ConfigField,
+        GoToSmsStore,
+        IncomingError,
+        IncomingMode,
+        Json,
+        KeywordReplies,
+        OptOutSource,
+        Source,
+        StatusPayload,
+    )
+
+    for name in TYPES:
+        assert name in sms_pkg.__all__, f"{name} is exported"
+    assert DEFAULT_API_BASE == "https://api.goto.com"
+    assert DEFAULT_AUTH_BASE == "https://authentication.logmeininc.com"
+    # The store protocol and the types are also reachable lazily from the top level.
+    assert aiogotoconnect.GoToSmsStore is GoToSmsStore  # type: ignore[attr-defined]
+    assert aiogotoconnect.AuthorizeRequest is AuthorizeRequest  # type: ignore[attr-defined]

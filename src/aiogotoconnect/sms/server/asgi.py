@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import parse_qsl, quote
 
 from aiogotoconnect.sms.core import ResolvedOptions
+from aiogotoconnect.sms.http import error_name
 from aiogotoconnect.sms.server.handlers import Handler, HttpRequest, HttpResponse
 
 __all__ = ["BODY_LIMIT", "ASGIApp", "RouterSource", "build_asgi_app", "setup_html"]
@@ -195,8 +196,9 @@ def _render(out: HttpResponse) -> _Rendered:
         ]
         body = out.html.encode("utf-8")
     elif out.json is not None:
-        # JSON.stringify's output: compact, non-ASCII kept, no NaN.
-        text = json.dumps(out.json, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        # Compact, no NaN. ASCII-escaped: a lone surrogate in a stored value stays encodable
+        # (JSON.stringify escapes those too), so it can't turn every response into a 500.
+        text = json.dumps(out.json, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
         headers.append((b"content-type", b"application/json; charset=utf-8"))
         body = text.encode("utf-8")
     if out.status not in (204, 304):
@@ -306,8 +308,9 @@ def build_asgi_app(source: RouterSource, inbound_only: bool = False) -> ASGIApp:
         )
         try:
             rendered = _render(await source.handle(req))
-        except Exception:  # noqa: BLE001 - a bug must reach the client as JSON, not a traceback
-            logger.debug("goto-sms: request body rejected (%s)", "unknown")
+        except Exception as err:  # noqa: BLE001 - a bug must reach the client as JSON
+            # By name only: the message text could hold a secret or PII.
+            logger.error("goto-sms: request handling failed (%s)", error_name(err))
             rendered = _render(HttpResponse(500, _INTERNAL))
         await _send(send, rendered, head)
 

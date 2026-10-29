@@ -8,6 +8,7 @@ tests that need a precise scope (the bare-mount redirect, lifespan) drive the AS
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from importlib.resources import files
@@ -336,8 +337,8 @@ async def test_an_error_while_building_the_response_is_a_json_500(cleanups: Clea
     async def raising(_req: HttpRequest) -> HttpResponse:
         raise ValueError("boom: a secret-looking detail")
 
-    logger, _ = recorder()
-    for handle in (unserializable, raising):
+    for handle, name in ((unserializable, "TypeError"), (raising, "ValueError")):
+        logger, records = recorder()
         app = build_asgi_app(RouterSource(options=options, logger=logger, handle=handle))
         res = await client_for(app, cleanups).get("/api/status")
         assert res.status_code == 500
@@ -346,6 +347,11 @@ async def test_an_error_while_building_the_response_is_a_json_500(cleanups: Clea
             "message": "Something went wrong; see the server logs",
         }
         assert "boom" not in res.text
+        # Logged at ERROR by the error's name only: never its message (it may hold a secret).
+        errors = [r.getMessage() for r in records if r.levelno == logging.ERROR]
+        assert any(name in m for m in errors), errors
+        assert not any("boom" in r.getMessage() for r in records)
+        assert not any("body rejected" in r.getMessage() for r in records)
 
 
 async def test_head_callback_does_not_consume_the_oauth_state(
@@ -490,3 +496,18 @@ async def test_query_headers_and_cookies_reach_authorize_flattened(
     # A cookie header SimpleCookie can't parse is no cookies, never a 500.
     bad = await client.get("/goto-sms/api/status", headers={"cookie": 'a="unterminated'})
     assert bad.status_code == 200
+
+
+async def test_a_stored_lone_surrogate_still_gives_a_200_status(
+    fake_goto: FakeGoTo, cleanups: Cleanups
+) -> None:
+    _, client = await mounted(fake_goto, cleanups)
+    # "\ud800" is valid JSON text but not encodable as UTF-8: the response must escape it.
+    res = await client.post(
+        "/goto-sms/api/credentials", headers=JSON_POST, content='{"clientId":"\\ud800"}'
+    )
+    assert res.status_code == 200
+    res = await client.get("/goto-sms/api/status")
+    assert res.status_code == 200
+    assert "\\ud800" in res.text
+    assert res.json()["clientId"] == "\ud800"

@@ -83,6 +83,10 @@ Things to know:
 - **Handlers run one at a time with no timeout.** Sync and async handlers are called in order, per message; an exception is logged and the message stays processed. An async handler that hangs blocks processing of later texts, so do slow work in a background task.
 - **One process per store.** The store holds a lock that each process re-claims every 30 seconds. A second process that cannot get it logs a warning (`Another process is using this goto-sms store`) and keeps going: nothing is gated on the lock, so it still polls, replays pending texts and sends. Two processes can therefore both deliver the same inbound text to their handlers. Run one process per store.
 - **Webhooks are account-wide.** GoTo `INBOUND_MESSAGE` subscriptions cover the whole account: every app on it is sent texts addressed to every number. The package drops a text whose `to` is not the configured `from_number`. When GoTo creates the webhook channel it sends `OPTIONS` to the URL and needs a 2xx; `OPTIONS /inbound/:secret` answers 200 whenever the secret matches.
+- **One event loop per instance.** An instance is bound to the event loop that first starts it. In a sync host, run one long-lived loop for it; don't wrap each call in its own `asyncio.run()`.
+- **The mount warning compares ASGI `root_path`.** Behind a proxy that sets `--root-path`, the prefix differs from `mount_path`, so the "mounted at" warning may be logged once; it is harmless there.
+- **Closed means closed.** After `close()`, `send()` no longer sends: it returns a result whose status is not `sent` (and before any start it raises `GoToSmsError` with code `closed`). Create a new instance instead of reusing a closed one.
+- **Use `dedupe_key` for exactly-once.** A send without one that is cancelled mid-request may still go out, and sending again then texts twice.
 - `GoToApiError` here is not the top-level `aiogotoconnect.GoToApiError`; import the SMS errors from `aiogotoconnect.sms`.
 
 ### Options

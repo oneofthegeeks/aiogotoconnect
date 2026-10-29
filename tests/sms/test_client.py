@@ -23,6 +23,7 @@ from aiogotoconnect.sms.core import AuthorizeRequest, Core
 from aiogotoconnect.sms.errors import GoToSmsError, NotConfiguredError
 from aiogotoconnect.sms.server.handlers import (
     HttpRequest,
+    assert_setup_auth,
     create_deferred_handlers,
     create_handlers,
 )
@@ -564,12 +565,19 @@ def test_c15_log_only_is_refused_in_production_at_construction() -> None:
     assert bare(log_only=True, env={"GOTO_SMS_ENV": "development"})._options.log_only is True
 
 
-def test_c15_allow_unauthenticated_setup_is_refused_in_production_at_construction() -> None:
-    with pytest.raises(GoToSmsError) as err:
-        create_goto_sms(allow_unauthenticated_setup=True, env={"GOTO_SMS_ENV": "production"})
-    assert err.value.code == "unauthenticated_setup_in_production"
-    assert "allow_unauthenticated_setup" in str(err.value)
-    assert bare(allow_unauthenticated_setup=True)._options.allow_unauthenticated_setup is True
+def test_allow_unauthenticated_setup_in_production_is_refused_by_assert_setup_auth() -> None:
+    # Node accepts the option at construction; only router() (assertSetupAuth) refuses it in
+    # production, and only without authorize. asgi_app() calls assert_setup_auth (Task 12).
+    production = {"GOTO_SMS_ENV": "production"}
+    sms = create_goto_sms(allow_unauthenticated_setup=True, env=production)
+    with pytest.raises(RuntimeError, match="pass authorize"):
+        assert_setup_auth(sms._options)
+    guarded = create_goto_sms(
+        allow_unauthenticated_setup=True, env=production, authorize=lambda _r: True
+    )
+    assert_setup_auth(guarded._options)
+    # Outside production the escape hatch works.
+    assert_setup_auth(bare(allow_unauthenticated_setup=True)._options)
 
 
 def test_env_defaults_to_os_environ(monkeypatch: pytest.MonkeyPatch) -> None:

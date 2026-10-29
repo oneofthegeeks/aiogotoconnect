@@ -15,6 +15,7 @@ from aiogotoconnect.sms.errors import (
     TemporaryError,
 )
 from aiogotoconnect.sms.phone import normalize_phone
+from aiogotoconnect.sms.store import FileStore, MemoryStore, SqliteStore
 from aiogotoconnect.sms.types import (
     VERSION,
     InboundMessage,
@@ -40,16 +41,19 @@ def create_goto_sms(*args: Any, **kwargs: Any) -> Any:
 __all__ = [
     "VERSION",
     "DecryptError",
+    "FileStore",
     "GoToApiError",
     "GoToSmsError",
     "InboundMessage",
     "Keyword",
     "LogEntry",
     "LoginExpiredError",
+    "MemoryStore",
     "NotConfiguredError",
     "SendFailedError",
     "SendResult",
     "SendStatus",
+    "SqliteStore",
     "TemporaryError",
     "create_goto_sms",
     "normalize_phone",

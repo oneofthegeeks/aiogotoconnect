@@ -31,6 +31,18 @@ _LAZY_SMS = {
     "MemoryStore": "aiogotoconnect.sms.store",
     "FileStore": "aiogotoconnect.sms.store",
     "SqliteStore": "aiogotoconnect.sms.store",
+    # Public sms types (none collides with a top-level name; the base-URL constants stay in sms).
+    "GoToSmsStore": "aiogotoconnect.sms.store",
+    "Json": "aiogotoconnect.sms.store",
+    "Authorize": "aiogotoconnect.sms.core",
+    "AuthorizeRequest": "aiogotoconnect.sms.core",
+    "IncomingMode": "aiogotoconnect.sms.core",
+    "StatusPayload": "aiogotoconnect.sms.server.status",
+    "IncomingError": "aiogotoconnect.sms.server.status",
+    "ConfigField": "aiogotoconnect.sms.config",
+    "Source": "aiogotoconnect.sms.config",
+    "OptOutSource": "aiogotoconnect.sms.optouts",
+    "KeywordReplies": "aiogotoconnect.sms.inbound.keywords",
 }
 
 

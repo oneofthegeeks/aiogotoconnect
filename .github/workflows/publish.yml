@@ -8,8 +8,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e .[dev]
@@ -23,8 +23,8 @@ jobs:
       id-token: write # PyPI trusted publishing (OIDC); no API token needed
       contents: read # a job-level permissions block REPLACES defaults; without this, checkout of the private repo fails "repository not found"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Tag must match the pyproject version

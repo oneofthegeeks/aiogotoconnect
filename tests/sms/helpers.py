@@ -82,6 +82,7 @@ async def connected_core(
     now: Callable[[], float] | None = None,
     logger: logging.Logger = LOGGER,
     tenant: str = "default",
+    timeout_s: float = 10.0,
 ) -> SmsRig:
     env = {} if env is None else env
     raw_url = config_value(public_url)
@@ -120,7 +121,12 @@ async def connected_core(
         now=clock,
     )
     http = create_goto_http(
-        session, options.api_base_url, auth.get_access_token, auth.force_refresh, logger=logger
+        session,
+        options.api_base_url,
+        auth.get_access_token,
+        auth.force_refresh,
+        timeout_s=timeout_s,
+        logger=logger,
     )
     opt_outs = OptOuts(store, tenant, clock)
     log = MessageLog(store, tenant, clock, retention_days=options.log_retention_days)

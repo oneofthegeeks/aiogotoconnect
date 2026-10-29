@@ -11,10 +11,12 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
 
+from aiogotoconnect.sms.client import GoToSms, create_goto_sms
 from aiogotoconnect.sms.config import ConfigResolver, config_value
 from aiogotoconnect.sms.core import Authorize, BackLink, Core, ResolvedOptions
 from aiogotoconnect.sms.http import create_goto_http
@@ -210,3 +212,26 @@ def recorder() -> tuple[logging.Logger, list[logging.LogRecord]]:
     logger.propagate = False
     logger.addHandler(_Keep())
     return logger, records
+
+
+async def connected_sms(fake: FakeGoTo, *, connect: bool = True, **opts: Any) -> GoToSms:
+    """Port of Node's `connectedSms`: create_goto_sms on the fake with a MemoryStore, started,
+    then configured (client id/secret, from number) and connected via save + finish_connect."""
+    defaults: dict[str, Any] = {
+        "encryption_key": "test-key",
+        "public_url": "https://app.example",
+        "env": {},
+        "logger": LOGGER,
+        "auth_base_url": fake.url,
+        "api_base_url": fake.url,
+    }
+    if "store" not in opts:
+        now = opts.get("now")
+        defaults["store"] = MemoryStore(now) if now else MemoryStore()
+    sms = create_goto_sms(**{**defaults, **opts})
+    await sms.start()
+    if connect:
+        core = sms.core
+        await core.config.save({"clientId": "cid", "clientSecret": "csecret", "fromNumber": FROM})
+        await core.auth.finish_connect("code-ok", state_of(await core.auth.start_connect()))
+    return sms

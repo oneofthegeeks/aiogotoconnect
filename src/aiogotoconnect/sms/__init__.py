@@ -3,8 +3,8 @@
 Nothing here may import `cryptography` at import time; it is an optional extra.
 """
 
-from typing import Any
-
+# client.py imports `cryptography` only when a start runs; create_goto_sms checks for it first.
+from aiogotoconnect.sms.client import GoToSms, create_goto_sms
 from aiogotoconnect.sms.errors import (
     DecryptError,
     GoToApiError,
@@ -25,24 +25,12 @@ from aiogotoconnect.sms.types import (
     SendStatus,
 )
 
-
-def create_goto_sms(*args: Any, **kwargs: Any) -> Any:
-    """Placeholder until Task 11 wires the real factory."""
-    try:
-        import cryptography  # noqa: F401
-    except ImportError as exc:
-        raise ImportError(
-            "aiogotoconnect SMS needs the optional 'cryptography' package: "
-            "pip install aiogotoconnect[sms]"
-        ) from exc
-    raise NotImplementedError("create_goto_sms is not implemented yet")
-
-
 __all__ = [
     "VERSION",
     "DecryptError",
     "FileStore",
     "GoToApiError",
+    "GoToSms",
     "GoToSmsError",
     "InboundMessage",
     "Keyword",

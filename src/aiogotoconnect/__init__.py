@@ -13,9 +13,9 @@ from aiogotoconnect.messaging import GoToMessaging
 from aiogotoconnect.sip.call import CallResult, GoToVoice
 
 # SMS names are resolved lazily (PEP 562) so importing the package never loads sms/ eagerly.
-# Names not listed here yet land with the task that creates them (GoToSms, stores).
 _LAZY_SMS = {
     "create_goto_sms": "aiogotoconnect.sms",
+    "GoToSms": "aiogotoconnect.sms",
     "normalize_phone": "aiogotoconnect.sms.phone",
     "SendResult": "aiogotoconnect.sms.types",
     "SendStatus": "aiogotoconnect.sms.types",

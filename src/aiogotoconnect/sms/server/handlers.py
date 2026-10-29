@@ -637,10 +637,17 @@ def create_deferred_handlers(
             return _startup_failed_handlers(options, logger, err, setup_html)
         return _live_handlers(c, setup_html)
 
+    def forget_if_cancelled(f: "asyncio.Future[Handler]") -> None:
+        # A cancelled startup isn't cached: the next request starts again (a failed one is).
+        nonlocal pending
+        if f.cancelled() and pending is f:
+            pending = None
+
     async def handle(req: HttpRequest) -> HttpResponse:
         nonlocal pending
         if pending is None:
             pending = asyncio.ensure_future(build())
+            pending.add_done_callback(forget_if_cancelled)
         # Shielded: one request giving up must not cancel the startup the others wait on.
         handler = await asyncio.shield(pending)
         return await handler(req)

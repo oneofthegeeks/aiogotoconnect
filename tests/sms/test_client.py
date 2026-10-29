@@ -904,3 +904,101 @@ def test_core_type_is_exported_for_handlers() -> None:
     # The deferred handlers take a zero-arg coroutine function returning Core.
     fn: Callable[[], Awaitable[Core]] = bare()._ready_core
     assert callable(fn)
+
+
+# --- final review fixes ---
+
+
+class FalsyStore(MemoryStore):
+    """A custom store that is falsy while empty (defines __len__): it must still be used."""
+
+    def __len__(self) -> int:
+        return 0
+
+
+async def test_a_falsy_custom_store_is_used_not_replaced_by_a_file_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store = FalsyStore()
+    assert not store
+    sms = create_goto_sms(store=store, encryption_key="k", env={}, logger=False)
+    # No data_dir is invented for a custom store, falsy or not.
+    assert sms._options.data_dir is None
+    await sms.start()
+    try:
+        assert sms.core.store is store
+        await sms.opt_outs.add(PEER, "admin")
+        assert await store.get("default", f"optout:{PEER}") is not None
+    finally:
+        await sms.close()
+    assert not (tmp_path / "data").exists()
+
+
+async def test_send_after_close_before_start_raises_closed_without_starting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sessions = record_sessions(monkeypatch)
+    store = CountingStore()
+    sms = bare(store=store, encryption_key="k")
+    await sms.close()
+    with pytest.raises(GoToSmsError) as err:
+        await sms.send(PEER, "hi")
+    assert err.value.code == "closed"
+    assert "create a new instance" in str(err.value)
+    with pytest.raises(GoToSmsError) as again:
+        await sms.start()
+    assert again.value.code == "closed"
+    assert store.claims == 0
+    assert sessions == []
+    assert await store.get("default", "process-lock") is None
+
+
+async def test_a_message_handler_can_still_send_while_close_waits_for_it(
+    fake_goto: FakeGoTo,
+) -> None:
+    sms = await connected_sms(fake_goto, authorize=lambda _r: True)
+    core = sms.core
+    handle = create_handlers(core, HTML)
+    secret = "S" * 43
+    await core.store.set(core.tenant, "inbound:mode", "webhook")
+    await core.store.set(core.tenant, "inbound:webhookSecret", secret)
+    gate = asyncio.Event()
+    replies: list[str] = []
+
+    async def reply(msg: InboundMessage) -> None:
+        await gate.wait()  # close() has set _closed by now and is waiting on this work
+        r = await sms.send(msg.from_, "thanks")
+        replies.append(r.status)
+
+    sms.on("message", reply)
+    envelope = {
+        "type": "INBOUND_MESSAGE",
+        "content": {
+            "payload": {
+                "id": "g-reply",
+                "direction": "INBOUND",
+                "authorTouchpoint": PEER,
+                "ownerPhoneNumber": FROM,
+                "body": "hello there",
+                "timestamp": "2026-10-27T10:00:00Z",
+            }
+        },
+    }
+    r = await handle(
+        HttpRequest(
+            method="POST",
+            path=f"/inbound/{secret}",
+            query={},
+            headers={"host": "app.example"},
+            cookies={},
+            body=envelope,
+        )
+    )
+    assert r.status == 204
+    closing = asyncio.ensure_future(sms.close())
+    await asyncio.sleep(0.02)
+    assert not closing.done()
+    gate.set()
+    await closing
+    assert replies == ["sent"]

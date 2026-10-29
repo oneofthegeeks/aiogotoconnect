@@ -3,6 +3,7 @@
 Run from the repo root (needs `pip install -e .[sms] fastapi uvicorn`):
 
     ADMIN_PASSWORD=change-me uvicorn app:app --app-dir examples/fastapi-app --port 8765
+    # or: ADMIN_PASSWORD=change-me python examples/fastapi-app/app.py   (reads PORT, default 8765)
 
 Then open http://localhost:8765/login?password=change-me once, and go to /api/goto/.
 The cookie login is a demo: put your own authentication in `is_admin`.
@@ -14,6 +15,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -47,7 +49,7 @@ sms = create_goto_sms(
     back_url="/",
     login_url="/login",
     public_url=os.environ.get("GOTO_SMS_PUBLIC_URL"),
-    data_dir=os.environ.get("GOTO_SMS_DATA_DIR", "./data"),
+    data_dir=os.environ.get("GOTO_SMS_DATA_DIR") or str(Path(__file__).parent / "data"),
     # Overridden only by the e2e test, which points both at a fake GoTo (unset in real use).
     auth_base_url=os.environ.get("GOTO_SMS_AUTH_BASE_URL") or DEFAULT_AUTH_BASE,
     api_base_url=os.environ.get("GOTO_SMS_API_BASE_URL") or DEFAULT_API_BASE,
@@ -101,6 +103,19 @@ async def send(request: Request) -> JSONResponse:
         AuthorizeRequest("POST", "/send", {}, dict(request.headers), dict(request.cookies))
     ):
         return JSONResponse({"error": "forbidden"}, status_code=403)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:  # malformed JSON (or bad UTF-8)
+        body = None
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"error": "invalid_body", "message": "Expected a JSON object"}, status_code=400
+        )
     result = await sms.send(str(body.get("to", "")), str(body.get("text", "")))
     return JSONResponse(dataclasses.asdict(result))
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8765")))

@@ -4,4 +4,4 @@ dist/
 *.egg-info
 .pytest_cache/
 .superpowers/
-data/
+examples/fastapi-app/data/

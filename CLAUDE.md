@@ -19,7 +19,7 @@ python3 -m venv .venv
 ## Testing
 pytest: `.venv/bin/python -m pytest -W error`. All protocol tests run against a fake GoTo SIP server in `tests/sip/fake_goto.py` (UDP, or TLS with an ssl_context) - no network. Live check: `examples/make_call.py`.
 
-SMS package: unit tests in `tests/sms/` (aiohttp fake GoTo in `tests/sms/fake_goto.py`, httpx ASGI transport); `docs/conformance.md` maps C1-C25 to test names, so keep it in sync when renaming tests. Browser e2e: `.venv/bin/python -m pytest e2e` (needs `playwright install chromium`). Lint/types: `.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy`.
+SMS package: unit tests in `tests/sms/` (aiohttp fake GoTo in `tests/sms/fake_goto.py`, httpx ASGI transport); `docs/conformance.md` maps C1-C25 to test names, so keep it in sync when renaming tests. Browser e2e: `.venv/bin/python -m pytest e2e` (needs `playwright install chromium`). Lint/types: `.venv/bin/ruff check src/aiogotoconnect/sms tests/sms && .venv/bin/ruff format --check src/aiogotoconnect/sms tests/sms && .venv/bin/mypy (scoped; the older modules are not linted)`.
 
 ## Deployment
 Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the `pypi` environment PAUSES for Taylor's manual approval in the Actions UI -> PyPI trusted publishing. Main is PR-only (required checks: test 3.12 + 3.13); work lands via PRs Taylor merges. No Docker - it's a library.

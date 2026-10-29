@@ -375,7 +375,8 @@ class GoToSms:
             c.poller.stop()
             await c.poller.idle()
             if c.inflight:
-                await asyncio.gather(*list(c.inflight), return_exceptions=True)
+                # wait, not gather: if close() itself is cancelled, post-204 work keeps running.
+                await asyncio.wait(list(c.inflight))
             if self._maintaining is not None:
                 await asyncio.wait([self._maintaining])
             # Release the lock only if it's still ours.

@@ -28,6 +28,9 @@ _LAZY_SMS = {
     "NotConfiguredError": "aiogotoconnect.sms.errors",
     "SendFailedError": "aiogotoconnect.sms.errors",
     "DecryptError": "aiogotoconnect.sms.errors",
+    "MemoryStore": "aiogotoconnect.sms.store",
+    "FileStore": "aiogotoconnect.sms.store",
+    "SqliteStore": "aiogotoconnect.sms.store",
 }
 
 

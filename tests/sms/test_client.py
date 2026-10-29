@@ -900,14 +900,6 @@ async def test_send_or_raise_raises_send_failed_when_not_configured() -> None:
     await sms.close()
 
 
-def test_asgi_apps_are_task_12() -> None:
-    sms = bare()
-    with pytest.raises(NotImplementedError):
-        sms.asgi_app()
-    with pytest.raises(NotImplementedError):
-        sms.webhook_app()
-
-
 def test_core_type_is_exported_for_handlers() -> None:
     # The deferred handlers take a zero-arg coroutine function returning Core.
     fn: Callable[[], Awaitable[Core]] = bare()._ready_core

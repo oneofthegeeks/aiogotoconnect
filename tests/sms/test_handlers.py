@@ -893,8 +893,7 @@ async def test_disconnect_clears_the_login_and_unexpected_errors_are_a_generic_5
 
 
 async def test_goto_errors_are_502_and_timeouts_503(env: Env) -> None:
-    rig, handle = await env.setup()
-    rig.core.http._timeout_s = 0.05  # don't wait 10 s for the hung request
+    _, handle = await env.setup(timeout_s=0.05)  # don't wait 10 s for the hung request
     env.fake.fail_next("GET", "/identity/v1/Users/me", 503, {"message": "down"})
     r = await handle(req("GET", "/api/accounts"))
     # A GoTo 5xx is a goto_api error (GoTo answered); only timeouts/network are temporary.

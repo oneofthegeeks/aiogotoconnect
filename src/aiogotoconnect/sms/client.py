@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import Literal, Self
+from typing import TYPE_CHECKING, Literal, Self
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -52,6 +52,9 @@ from aiogotoconnect.sms.server.status import StatusPayload, build_status, startu
 from aiogotoconnect.sms.store.file import FileStore
 from aiogotoconnect.sms.store.types import GoToSmsStore
 from aiogotoconnect.sms.types import InboundMessage, SendResult
+
+if TYPE_CHECKING:
+    from aiogotoconnect.sms.server.asgi import ASGIApp, RouterSource
 
 LOCK_KEY = "process-lock"
 LOCK_TTL_MS = 90_000
@@ -214,6 +217,8 @@ class GoToSms:
         self._lock_warned = False
         # The maintenance run in flight (lock refresh + pending retry); close() waits for it.
         self._maintaining: asyncio.Task[None] | None = None
+        # The one handler set asgi_app() and webhook_app() share (Node's `handle ??=`).
+        self._router_source: RouterSource | None = None
         self.opt_outs = GoToSmsOptOuts(self._ready_core)
 
     # --- lifecycle ---
@@ -526,11 +531,38 @@ class GoToSms:
 
     # --- web apps (Task 12) ---
 
-    def asgi_app(self) -> object:
-        raise NotImplementedError("asgi_app() lands with the ASGI adapter")
+    def _source(self) -> "RouterSource":
+        # Imported here: the web side isn't needed by hosts that only send.
+        from aiogotoconnect.sms.server.asgi import RouterSource, setup_html
+        from aiogotoconnect.sms.server.handlers import create_deferred_handlers
 
-    def webhook_app(self) -> object:
-        raise NotImplementedError("webhook_app() lands with the ASGI adapter")
+        if self._router_source is None:
+            # Each request awaits the memoized start(); if it failed, the startup-failed
+            # routes answer, so the page loads and shows why.
+            handle = create_deferred_handlers(
+                self._options, self._logger, self._ready_core, setup_html()
+            )
+            self._router_source = RouterSource(self._options, self._logger, handle)
+        return self._router_source
+
+    def asgi_app(self) -> "ASGIApp":
+        """The setup page, its JSON API, the OAuth callback and the webhook as an ASGI 3 app:
+        `app.mount(mount_path, sms.asgi_app())`. Raises RuntimeError without `authorize`
+        (unless allow_unauthenticated_setup, outside production). Starts nothing itself; the
+        first request awaits start()."""
+        from aiogotoconnect.sms.server.asgi import build_asgi_app
+        from aiogotoconnect.sms.server.handlers import assert_setup_auth
+
+        assert_setup_auth(self._options)
+        return build_asgi_app(self._source())
+
+    def webhook_app(self) -> "ASGIApp":
+        """Only `POST`/`OPTIONS /inbound/:secret` (authenticated by the path secret, so no
+        `authorize` is needed); any other request is 404. For hosts that serve the setup page
+        elsewhere or not at all."""
+        from aiogotoconnect.sms.server.asgi import build_asgi_app
+
+        return build_asgi_app(self._source(), inbound_only=True)
 
     @property
     def core(self) -> Core:

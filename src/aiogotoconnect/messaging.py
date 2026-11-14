@@ -38,9 +38,8 @@ class GoToMessaging:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 401:
                     raise GoToAuthError("SMS send rejected: access token not accepted")
-                # Error text is deliberately not included: it could echo phone numbers or tokens.
                 if response.status >= 400:
-                    raise GoToApiError(f"SMS send failed with HTTP {response.status}", response.status)
+                    raise await _api_error(response)
                 # Success with no usable body is still success: GoTo returns JSON, but don't rely on it.
                 try:
                     parsed = await response.json(content_type=None)
@@ -49,3 +48,34 @@ class GoToMessaging:
                 return {} if parsed is None else parsed  # aiohttp yields None for an empty body
         except (aiohttp.ClientError, asyncio.TimeoutError) as error:
             raise GoToError("SMS send request failed") from error
+
+
+# GoTo's error sentences are short; cap them so an unexpected HTML page can't flood a log.
+_MAX_DETAIL = 200
+
+
+async def _api_error(response: aiohttp.ClientResponse) -> GoToApiError:
+    """Build a GoToApiError carrying GoTo's errorCode/message/reference when the body has them.
+
+    Only those three named fields are kept, never the raw body, so nothing else the
+    server echoes (request payload, headers) reaches the exception or the logs.
+    """
+    error_code = detail = reference = None
+    try:
+        parsed = await response.json(content_type=None)
+    except (ValueError, aiohttp.ClientError):  # not JSON, or the body failed to read
+        parsed = None
+    if isinstance(parsed, dict):
+        error_code = _field(parsed, "errorCode")
+        detail = _field(parsed, "message")
+        reference = _field(parsed, "reference")
+
+    message = f"SMS send failed with HTTP {response.status}"
+    if error_code or detail:
+        message += ": " + " - ".join(part for part in (error_code, detail) if part)
+    return GoToApiError(message, response.status, error_code, detail, reference)
+
+
+def _field(parsed: dict, key: str) -> str | None:
+    value = parsed.get(key)
+    return value[:_MAX_DETAIL] if isinstance(value, str) and value else None

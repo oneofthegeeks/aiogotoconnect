@@ -29,4 +29,6 @@ aiogotoconnect = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Explicit, or newer pytest-asyncio warns at startup and publish.yml's `pytest -W error` dies.
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

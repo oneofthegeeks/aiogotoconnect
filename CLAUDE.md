@@ -21,6 +21,7 @@ pytest: `.venv/bin/python -m pytest -W error`. All protocol tests run against a 
 
 ## Deployment
 Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the `pypi` environment PAUSES for Taylor's manual approval in the Actions UI -> PyPI trusted publishing. Main is PR-only (required checks: test 3.12 + 3.13); work lands via PRs Taylor merges. No Docker - it's a library.
+Secrets (SIP device + OAuth client for live smoke tests): Infisical `home` project, folder `/aiogotoconnect` (prod); pulled ad hoc, nothing is rendered.
 
 ## Key Files
 `src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711/G.722 payload), `sip/g722.py` (pure-Python G.722 encoder; decoder is test-only), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).

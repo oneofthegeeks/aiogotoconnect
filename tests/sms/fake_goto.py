@@ -404,6 +404,9 @@ class FakeGoTo:
             return FakeResponse(400, {"error": "accountKey required"})
         start = _timestamp_ms(req.query.get("startTime", ""))
         end = _timestamp_ms(req.query.get("endTime", ""))
+        if start >= end:
+            # As GoTo does (seen live 2026-11-19): an empty or reversed window is a 400.
+            return FakeResponse(400, {"error": "startTime must be before endTime"})
         items: list[Any] = [
             self._call_summary(c) for c in self.calls if start <= _timestamp_ms(c["created"]) <= end
         ]

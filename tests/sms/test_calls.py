@@ -592,7 +592,14 @@ async def test_first_look_checks_access_but_delivers_nothing(setup: RigFactory) 
     assert await rig.watcher.tick() == 0
     q = rig.summaries()
     assert len(q) == 1
-    assert q[0]["startTime"] == q[0]["endTime"] == ["2026-10-27T10:00:00Z"]
+    # GoTo answers 400 to an empty window, so the first look reaches back one minute...
+    assert (q[0]["startTime"], q[0]["endTime"]) == (
+        ["2026-10-27T09:59:00Z"],
+        ["2026-10-27T10:00:00Z"],
+    )
+    # ...without delivering what it finds there, and without an error.
+    assert rig.got == []
+    assert await rig.store.get(T, "calls:error") is None
 
 
 async def test_403_sets_calls_scope_and_a_good_look_clears_it(setup: RigFactory) -> None:

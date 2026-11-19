@@ -120,14 +120,25 @@ Exported from `aiogotoconnect.sms`: `InboundCall`. README gains a short "Calls" 
 - Without `cr.v1.read` the request is refused with 401 or 403.
 - Timestamps mix precisions (as the messaging API does); compare parsed instants.
 
-Not known: whether `report-summaries` pages, its rate limit, whether a missing scope answers 401 or 403, and what a
-report looks like when the caller withholds their number. The builder reads GoTo's published reference for this API
-first. The live check is made **only through the running board service**, which already calls these endpoints: a
-temporary line in `~/dev/todo-board/calls.py` that writes the response's key names (never numbers or names) to a file,
-removed afterwards. Never start a second library instance on the board's store: it would contest the lock and could
-rotate the live refresh token. What the live check cannot show (the refusal status, a withheld caller) is handled
-defensively: both statuses are treated alike, and a `PHONE_NUMBER` participant dialled to the sending number is
-delivered whether or not `caller.number` is present. (The board drops such calls today; that is a bug this fixes.)
+**Checked live on 2026-11-19 (UTC) through the board service, 13 inbound calls, key names and true/false only:**
+
+- `report-summaries` pages: the answer carries `pageSize` (default 100) and `nextPageMarker`; the next page is asked
+  for with `pageMarker`. Follow it as the text poller does.
+- The summary **does** say which number was dialled after all: for an inbound call `caller.type.value` is
+  `PHONE_NUMBER` and `caller.type.number` is the dialled number (equal to the full report's in 13 of 13).
+  `caller.name` and `caller.number` equal the report's caller. So the watcher reads the summary alone and fetches the
+  full report only when `caller.type.number` is missing. `raw` on the event is the summary (the report when fetched).
+- For an outbound call `caller.type.value` is `LINE`.
+- `callerOutcome` values seen: `MISSED`, `NORMAL`, `LEFT_DIAL_PLAN` (answered by a dial-plan step, here voicemail or
+  an AI receptionist: `callAnswered` is set). The set is not documented, so it stays a plain string.
+- GoTo's guide says a report "becomes available as soon as a call completes" and that a `REPORT_SUMMARY` push
+  subscription exists; polling is kept because the push needs a reachable webhook or an open socket.
+
+Still not known: the rate limit, whether a missing scope answers 401 or 403, and what a summary looks like when the
+caller withholds their number. These are handled defensively: both statuses are treated alike, and a call dialled to
+the sending number is delivered whether or not `caller.number` is present. (The board drops such calls today; that is
+a bug this fixes.) Never start a second library instance on the board's store to look: it would contest the lock and
+could rotate the live refresh token.
 
 ## How it works inside
 
@@ -143,9 +154,10 @@ Each tick:
 3. Ask for summaries from (cursor − 15 minutes) to now. The reach-back covers reports that arrive late. Clamp the
    reach-back to 24 hours, as the text poller does, and never deliver a call that started before `calls:since`. A call
    already ringing at the moment watching is first switched on can therefore be missed; that is accepted.
-4. For each summary, oldest first, that is `INBOUND` and whose id is not already seen: fetch the full report, find the
-   dialled number and the caller. Not an outside call, or dialled to another number: mark seen, move on. If the report
-   fetch fails, leave it unseen so the next tick tries again.
+4. For each summary, oldest first, that is `INBOUND` and whose id is not already seen: read the dialled number and the
+   caller from the summary (fetching the full report only when the summary lacks the dialled number). Not an outside
+   call, or dialled to another number: mark seen, move on. If a needed report fetch fails, leave it unseen so the next
+   tick tries again.
 5. Double ring: if the same caller number already produced an event within 120 seconds (across ticks, not only within
    one), mark seen and skip. A withheld number (`from_ == ""`) is never treated as a repeat: two different hidden
    callers must both arrive.

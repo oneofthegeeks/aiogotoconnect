@@ -86,6 +86,7 @@ Things to know:
 - **One event loop per instance.** An instance is bound to the event loop that first starts it. In a sync host, run one long-lived loop for it; don't wrap each call in its own `asyncio.run()`.
 - **The mount warning compares ASGI `root_path`.** Behind a proxy that sets `--root-path`, the prefix differs from `mount_path`, so the "mounted at" warning may be logged once; it is harmless there.
 - **Closed means closed.** After `close()`, `send()` no longer sends: it returns a result whose status is not `sent` (and before any start it raises `GoToSmsError` with code `closed`). Create a new instance instead of reusing a closed one.
+- **`sms.message_log.list(limit=50)`** returns recent `LogEntry` rows, newest first: direction, from, to, status and time, never the text. Use it instead of reaching into `sms.core`. `sms.opt_outs` has `has`, `add`, `remove` and `list`.
 - **Use `dedupe_key` for exactly-once.** A send without one that is cancelled mid-request may still go out, and sending again then texts twice.
 - `GoToApiError` here is not the top-level `aiogotoconnect.GoToApiError`; import the SMS errors from `aiogotoconnect.sms`.
 

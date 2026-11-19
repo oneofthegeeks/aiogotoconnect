@@ -139,6 +139,23 @@ async def test_facade_end_to_end_on_fake(
     assert "csecret" not in json.dumps(s), "status never carries the secret"
 
 
+async def test_message_log_lists_recent_entries_without_reaching_into_core(
+    fake_goto: FakeGoTo, cleanups: list[Callable[[], Awaitable[None]]]
+) -> None:
+    sms = await connected_sms(fake_goto, now=at_t0)
+    cleanups.append(sms.close)
+    before = len(await sms.message_log.list())
+    assert (await sms.send(PEER, "one")).status == "sent"
+    assert (await sms.send(PEER, "two")).status == "sent"
+    entries = await sms.message_log.list()
+    assert len(entries) == before + 2
+    sent = [e for e in entries if e.direction == "outbound" and e.to == PEER]
+    assert len(sent) == 2
+    assert all(e.status == "sent" for e in sent)
+    assert not hasattr(sent[0], "text"), "the log never holds message text"
+    assert len(await sms.message_log.list(1)) == 1
+
+
 async def test_second_instance_on_same_store_logs_the_one_process_warning(
     cleanups: list[Callable[[], Awaitable[None]]],
 ) -> None:

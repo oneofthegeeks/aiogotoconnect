@@ -11,6 +11,7 @@ This module never imports `cryptography` (the optional [sms] extra) at import ti
 """
 
 import asyncio
+import builtins
 import contextlib
 import logging
 import os
@@ -51,7 +52,7 @@ from aiogotoconnect.sms.send import Sender
 from aiogotoconnect.sms.server.status import StatusPayload, build_status, startup_error_text
 from aiogotoconnect.sms.store.file import FileStore
 from aiogotoconnect.sms.store.types import GoToSmsStore
-from aiogotoconnect.sms.types import InboundMessage, SendResult
+from aiogotoconnect.sms.types import InboundMessage, LogEntry, SendResult
 
 if TYPE_CHECKING:
     from aiogotoconnect.sms.server.asgi import ASGIApp, RouterSource
@@ -179,6 +180,18 @@ class GoToSmsOptOuts:
         return await (await self._core()).opt_outs.list()
 
 
+class GoToSmsLog:
+    """`sms.message_log`: the message log (who was texted or texted in, when, and the outcome; never
+    the text itself), waiting for startup first. Read-only: the package writes it."""
+
+    def __init__(self, core: Callable[[], Awaitable[Core]]) -> None:
+        self._core = core
+
+    async def list(self, limit: int = 50) -> builtins.list[LogEntry]:
+        """The most recent entries, newest first."""
+        return await (await self._core()).log.list(limit)
+
+
 class GoToSms:
     """Send and receive GoTo Connect SMS. Make one with `create_goto_sms(...)`.
 
@@ -220,6 +233,7 @@ class GoToSms:
         # The one handler set asgi_app() and webhook_app() share (Node's `handle ??=`).
         self._router_source: RouterSource | None = None
         self.opt_outs = GoToSmsOptOuts(self._ready_core)
+        self.message_log = GoToSmsLog(self._ready_core)
 
     # --- lifecycle ---
 

@@ -386,6 +386,7 @@ class GoToSms:
                 store=store,
                 tenant=tenant,
                 emit=self._emit_call,
+                has_listeners=lambda: bool(self._call_listeners),
                 interval_s=o.call_poll_interval_s,
                 now=now,
                 logger=logger,

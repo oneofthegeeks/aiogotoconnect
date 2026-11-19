@@ -856,6 +856,26 @@ async def test_end_to_end_call_reaches_the_handler(live: Callable[..., Awaitable
     assert (await rig.sms.status())["calls"] == {"watching": True}
 
 
+async def test_no_look_happens_until_a_call_handler_is_registered(
+    live: Callable[..., Awaitable[Live]],
+) -> None:
+    rig = await live(watch_calls=True, call_poll_interval=3600.0)
+    watcher = rig.sms.core.calls
+    assert watcher is not None
+    assert await watcher.tick() == 0
+    assert rig.fake.call_report_hits == []
+    assert await rig.sms.core.store.get(rig.sms.core.tenant, "calls:cursor") is None
+    assert (await rig.sms.status())["calls"] == {"watching": False}
+    # The handler arrives late; nothing was marked seen in the meantime, so it still gets the call.
+    got: list[InboundCall] = []
+    rig.sms.on("call", got.append)
+    await watcher.tick()
+    rig.clock.t += 2 * MIN
+    rig.fake.calls.append(_fake_call("c1", rig.clock.t - MIN))
+    assert await watcher.tick() == 1
+    assert [c.id for c in got] == ["c1"]
+
+
 async def test_watch_calls_off_makes_no_call_report_requests(
     live: Callable[..., Awaitable[Live]],
 ) -> None:
@@ -881,6 +901,7 @@ async def test_watcher_runs_in_every_incoming_mode(
 
 async def test_the_watcher_loop_looks_on_its_own(live: Callable[..., Awaitable[Live]]) -> None:
     rig = await live(watch_calls=True, call_poll_interval=0.02)
+    rig.sms.on("call", lambda _c: None)  # no handler, no look
     for _ in range(100):
         if len(rig.fake.call_report_hits) >= 2:
             break

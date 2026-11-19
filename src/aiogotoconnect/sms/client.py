@@ -522,6 +522,14 @@ class GoToSms:
 
     # --- status ---
 
+    async def access_token(self) -> str:
+        """A current GoTo access token for this login, refreshed when needed, for calling other GoTo
+        APIs from the host app (call reports, presence, ...). The login carries whatever scopes are
+        enabled on the OAuth client: the package names none when it signs in (C1), so enabling a
+        scope there and reconnecting is all it takes. Raises `NotConfiguredError` when GoTo is not
+        connected and `LoginExpiredError` when the login has to be redone. Never log it."""
+        return await (await self._ready_core()).auth.get_access_token()
+
     async def status(self) -> StatusPayload:
         """The setup page's status: the GET /api/status payload without `incoming.webhookUrl`
         (it holds the webhook secret, shown only behind `authorize`). Never raises for missing

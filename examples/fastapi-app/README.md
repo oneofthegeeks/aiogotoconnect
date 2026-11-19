@@ -21,3 +21,4 @@ Open `http://localhost:8765/login?password=change-me` once (it sets the cookie),
 - `GOTO_SMS_AUTH_BASE_URL` / `GOTO_SMS_API_BASE_URL` are read by this example only, to point it at
   a fake GoTo for `pytest e2e`. Leave them unset against real GoTo.
 - The cookie login is a demo; replace `is_admin` with your own authentication.
+- `GOTO_SMS_WATCH_CALLS=1` turns on `watch_calls` and logs each inbound call to the sending number (needs the scope `cr.v1.read` on the GoTo OAuth client).

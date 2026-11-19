@@ -19,9 +19,10 @@ from aiogotoconnect.sms.inbound.calls import REPORTS, SUMMARIES, CallWatcher
 from aiogotoconnect.sms.log import iso_ms
 from aiogotoconnect.sms.oauth import GoToAuth
 from aiogotoconnect.sms.secrets import SecretBox
+from aiogotoconnect.sms.server.status import build_status
 
-from .fake_goto import FakeGoTo, start_fake_goto
-from .helpers import recorder
+from .fake_goto import FakeGoTo, FakeResponse, start_fake_goto
+from .helpers import connected_sms, recorder
 
 FROM = "+18015550100"
 PEER = "+18015550123"
@@ -513,8 +514,9 @@ async def test_every_page_of_summaries_is_read(setup: RigFactory) -> None:
     rig.fake.poll_page_size = 2
     for i in range(5):
         rig.call(f"c{i}", minutes_ago=1, caller_number=f"+1801555020{i}")
+    before = len(rig.summaries())
     assert await rig.look() == 5
-    assert len(rig.summaries()) == 3 + 0  # the first look made no request: three pages here
+    assert len(rig.summaries()) - before == 3
 
 
 async def test_changing_the_sending_number_takes_effect_next_tick(setup: RigFactory) -> None:
@@ -554,3 +556,215 @@ async def test_caller_details_never_reach_info_logs(setup: RigFactory) -> None:
     for r in records:
         if r.levelno >= logging.INFO:
             assert PEER not in r.getMessage() and "Pat Example" not in r.getMessage()
+
+
+# --- Task 4: refusals, back-off and status ---
+
+SCOPE_MESSAGE = (
+    "GoTo refused the call reports. Enable the scope cr.v1.read on the OAuth client, "
+    "then reconnect."
+)
+
+
+def refuse_summaries(rig: Rig, status: int) -> None:
+    """Every summaries request from now on answers `status`, whatever the token."""
+    _refuse(rig.fake, status)
+
+
+def _refuse(fake: FakeGoTo, status: int) -> None:
+    fake._routes[:] = [r for r in fake._routes if r.prefix != SUMMARIES]
+
+    def refused(r: Any) -> FakeResponse:
+        fake.call_report_hits.append(r.path)
+        return FakeResponse(status, {})
+
+    fake.route("GET", SUMMARIES, refused, auth=False)
+
+
+def token_requests(rig: Rig) -> int:
+    return sum(1 for r in rig.fake.requests if r.path.startswith("/oauth/token"))
+
+
+async def test_first_look_checks_access_but_delivers_nothing(setup: RigFactory) -> None:
+    rig = await setup()
+    rig.call("old", minutes_ago=1)
+    assert await rig.watcher.tick() == 0
+    q = rig.summaries()
+    assert len(q) == 1
+    assert q[0]["startTime"] == q[0]["endTime"] == ["2026-10-27T10:00:00Z"]
+
+
+async def test_403_sets_calls_scope_and_a_good_look_clears_it(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    cursor = await rig.store.get(T, "calls:cursor")
+    rig.call("c1", minutes_ago=1)
+    rig.fake.fail_next("GET", SUMMARIES, 403, {"error": "forbidden"})
+    assert await rig.look() == 0
+    assert await rig.store.get(T, "calls:error") == {
+        "error": "calls_scope",
+        "message": SCOPE_MESSAGE,
+        "gotoStatus": 403,
+    }
+    assert await rig.store.get(T, "calls:cursor") == cursor
+    rig.clock.t += 60 * MIN  # past the back-off
+    assert await rig.look() == 1
+    assert await rig.store.get(T, "calls:error") is None
+
+
+async def test_repeated_401_never_marks_login_expired_and_backs_off(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    refuse_summaries(rig, 401)
+    tokens_before, looks_before = token_requests(rig), len(rig.summaries())
+    for _ in range(5):
+        assert await rig.look() == 0
+    # One look: the request, one forced refresh, the retry. Then nothing for an hour.
+    assert len(rig.summaries()) - looks_before == 2
+    assert token_requests(rig) - tokens_before == 1
+    assert await rig.store.get(T, "login_expired") is not True
+    assert (await rig.auth.status()).connected is True
+    error = await rig.store.get(T, "calls:error")
+    assert isinstance(error, dict)
+    assert (error["error"], error["message"], error["gotoStatus"]) == (
+        "calls_scope",
+        SCOPE_MESSAGE,
+        401,
+    )
+    rig.clock.t += 60 * MIN
+    await rig.look()
+    assert len(rig.summaries()) - looks_before == 4
+
+
+async def test_a_restart_looks_once_while_refused(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    refuse_summaries(rig, 403)
+    await rig.look()
+    before = len(rig.summaries())
+    again = rig.new_watcher()
+    await again.tick()
+    await again.tick()
+    assert len(rig.summaries()) - before == 1
+
+
+async def test_500_sets_goto_api_and_keeps_the_normal_interval(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    rig.fake.fail_next("GET", SUMMARIES, 500)
+    assert await rig.look() == 0
+    assert await rig.store.get(T, "calls:error") == {
+        "error": "goto_api",
+        "message": "GoTo API error 500",
+        "gotoStatus": 500,
+    }
+    rig.call("c1", minutes_ago=1)
+    assert await rig.look() == 1  # two minutes later, not an hour
+    assert await rig.store.get(T, "calls:error") is None
+
+
+async def test_network_failure_sets_goto_unreachable(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    await rig.fake.close()
+    assert await rig.look() == 0
+    assert await rig.store.get(T, "calls:error") == {
+        "error": "goto_unreachable",
+        "message": "GoTo could not be reached",
+    }
+
+
+async def test_a_really_expired_login_is_not_called_a_scope_problem(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    await rig.store.set(T, "login_expired", True)
+    before = len(rig.summaries())
+    assert await rig.look() == 0
+    assert await rig.look() == 0
+    assert len(rig.summaries()) == before  # no request leaves without a login
+    error = await rig.store.get(T, "calls:error")
+    assert isinstance(error, dict) and error["error"] == "login_expired"
+
+
+async def test_scope_warning_is_logged_once(setup: RigFactory) -> None:
+    logger, records = recorder()
+    rig = await (await setup(logger=logger)).started()
+    refuse_summaries(rig, 403)
+    for _ in range(3):
+        await rig.look(minutes_later=61)
+    warnings = [r.getMessage() for r in records if r.levelno >= logging.WARNING]
+    assert len(warnings) == 1
+    assert "cr.v1.read" in warnings[0]
+
+
+async def test_texting_still_works_while_calls_are_refused(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    refuse_summaries(rig, 401)
+    for _ in range(3):
+        await rig.look(minutes_later=61)
+    # The same login still reaches the rest of the API.
+    await rig.http.json(
+        "POST",
+        "/messaging/v1/messages",
+        {"ownerPhoneNumber": FROM, "contactPhoneNumbers": [PEER], "body": "still here"},
+    )
+    assert rig.fake.sent[-1]["body"] == "still here"
+
+
+async def _watching_sms(fake: FakeGoTo, **opts: Any) -> tuple[GoToSms, CallWatcher]:
+    """A started client with watch_calls on, and a watcher over its core driven by hand."""
+    sms = await connected_sms(fake, watch_calls=True, call_poll_interval=3600.0, **opts)
+    core = sms.core
+    await core.config.save({"accountKey": "acct-1"})
+
+    async def emit(_c: InboundCall) -> None:
+        return None
+
+    watcher = CallWatcher(
+        http=core.http,
+        config=core.config,
+        store=core.store,
+        tenant=core.tenant,
+        emit=emit,
+        interval_s=3600.0,
+        now=core.options.now,
+        logger=LOGGER,
+    )
+    return sms, watcher
+
+
+async def test_status_has_no_calls_key_when_off() -> None:
+    fake = await start_fake_goto()
+    sms = await connected_sms(fake)
+    try:
+        assert "calls" not in await sms.status()
+        assert "calls" not in await build_status(sms._options, sms.core, include_webhook_url=True)
+    finally:
+        await sms.close()
+        await fake.close()
+
+
+async def test_status_calls_watching_true_after_a_good_look() -> None:
+    fake = await start_fake_goto()
+    sms, watcher = await _watching_sms(fake)
+    try:
+        await sms.core.store.delete(sms.core.tenant, "calls:cursor")
+        assert (await sms.status())["calls"] == {"watching": False}
+        await watcher.tick()
+        assert (await sms.status())["calls"] == {"watching": True}
+    finally:
+        await sms.close()
+        await fake.close()
+
+
+async def test_status_calls_carries_the_error() -> None:
+    fake = await start_fake_goto()
+    sms, watcher = await _watching_sms(fake)
+    try:
+        await watcher.tick()
+        _refuse(fake, 403)
+        await watcher.tick()
+        expected = {
+            "watching": False,
+            "error": {"error": "calls_scope", "message": SCOPE_MESSAGE, "gotoStatus": 403},
+        }
+        assert (await sms.status())["calls"] == expected
+        via_route = await build_status(sms._options, sms.core, include_webhook_url=True)
+        assert via_route["calls"] == expected
+    finally:
+        await sms.close()
+        await fake.close()

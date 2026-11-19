@@ -1,4 +1,4 @@
-# Conformance map (C1-C25)
+# Conformance map (C1-C31)
 
 The goto-sms conformance checklist ([`contract/conformance.md`](https://github.com/oneofthegeeks/goto-sms/blob/main/contract/conformance.md)) maps to these Python tests. Names are searchable in `tests/sms/`. Parametrized tests are listed by function name. Tests run against the in-process fake GoTo in `tests/sms/fake_goto.py`, never the real service.
 
@@ -31,3 +31,17 @@ The goto-sms conformance checklist ([`contract/conformance.md`](https://github.c
 | C25 | A text to another number in the account is dropped       | `test_c25_text_to_other_number_dropped`                                                                                                                                                                                             |
 
 The browser e2e (`pytest e2e`) drives `examples/fastapi-app` against the fake GoTo.
+
+## Calls (C26-C31)
+
+Call watching (`watch_calls=True`, `sms.on("call")`). All in `tests/sms/test_calls.py`.
+
+| #   | Behaviour | Python test(s) |
+| --- | --- | --- |
+| C26 | Off by default: no call-report requests, no `calls` key, `cr.v1.read` not in `requiredScopes` | `test_watch_calls_off_makes_no_call_report_requests`; `test_status_has_no_calls_key_when_off`; `test_required_scopes_gain_the_call_scope_only_when_watching` |
+| C27 | An inbound call to the sending number is delivered once; outbound and other lines' calls never | `test_inbound_call_to_the_sending_number_is_delivered_once`; `test_outbound_call_is_not_delivered`; `test_call_to_another_number_on_the_account_is_not_delivered` |
+| C28 | Nothing that started before watching was switched on is delivered | `test_first_tick_imports_nothing`; `test_call_started_before_since_is_not_delivered` |
+| C29 | Double ring: same E.164 caller, same outcome, within 120 s is one event; a different outcome or a withheld number is its own | `test_double_ring_in_one_tick_is_one_event`; `test_double_ring_across_two_ticks_is_one_event`; `test_voicemail_then_missed_from_the_same_caller_are_two_events`; `test_two_withheld_callers_a_minute_apart_both_deliver` |
+| C30 | A refusal sets `calls.error` = `calls_scope`, backs off to hourly until the login changes, never marks the login expired, and a good look clears it | `test_403_sets_calls_scope_and_a_good_look_clears_it`; `test_repeated_401_never_marks_login_expired_and_backs_off`; `test_a_new_login_lifts_the_back_off` |
+| C31 | Caller number and caller ID never appear in logs at info or above, nor in the status payload | `test_caller_details_never_reach_info_logs`; `test_call_handler_exception_does_not_stop_the_next`; `test_status_calls_carries_the_error` |
+

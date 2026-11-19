@@ -105,7 +105,7 @@ async def on_call(call):  # InboundCall
 sms.on("call", on_call)
 ```
 
-- **Enable the scope `cr.v1.read`** on your GoTo OAuth client, then reconnect on the setup page. Until then `status()["calls"]` reads `{"watching": False, "error": {"error": "calls_scope", ...}}`, the package looks only once an hour (and again as soon as the login changes, so a reconnect is picked up at the next look), and texting is unaffected.
+- **Enable the scope `cr.v1.read`** on your GoTo OAuth client, then reconnect on the setup page. With `watch_calls=True` the status payload lists it in `requiredScopes`. Until then `status()["calls"]` reads `{"watching": False, "error": {"error": "calls_scope", ...}}`, the package looks only once an hour (and again as soon as the login changes, so a reconnect is picked up at the next look), and texting is unaffected.
 - **Every inbound call to the sending number is delivered**, answered or not. Filter on `call.outcome`: GoTo's own value, e.g. `MISSED`, `NORMAL`, or `LEFT_DIAL_PLAN` (a dial-plan step such as voicemail took it). GoTo does not document the full set, so it is a plain string. Calls to other numbers on the account, and outbound calls, never arrive.
 - **It polls** GoTo's call reports every `call_poll_interval` seconds (default 120), whatever the mode for texts. A report exists only once the call has ended, so the event comes after the call, not while it rings. A call that lasts longer than two hours may not be noticed.
 - **Nothing from before switch-on.** The first look starts from now; a call ringing at that moment can be missed.

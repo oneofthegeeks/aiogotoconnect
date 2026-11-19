@@ -156,6 +156,20 @@ async def test_message_log_lists_recent_entries_without_reaching_into_core(
     assert len(await sms.message_log.list(1)) == 1
 
 
+async def test_access_token_gives_the_host_the_current_goto_token(
+    fake_goto: FakeGoTo, cleanups: list[Callable[[], Awaitable[None]]]
+) -> None:
+    sms = await connected_sms(fake_goto, now=at_t0)
+    cleanups.append(sms.close)
+    token = await sms.access_token()
+    assert token and token == await sms.core.auth.get_access_token()
+
+    fresh = create_goto_sms(store=MemoryStore(), encryption_key="k", env={}, logger=False)
+    cleanups.append(fresh.close)
+    with pytest.raises(NotConfiguredError):
+        await fresh.access_token()
+
+
 async def test_second_instance_on_same_store_logs_the_one_process_warning(
     cleanups: list[Callable[[], Awaitable[None]]],
 ) -> None:

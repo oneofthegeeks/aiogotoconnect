@@ -25,7 +25,7 @@ from aiogotoconnect.sms.errors import (
 from aiogotoconnect.sms.inbound.keywords import KeywordReplies
 from aiogotoconnect.sms.optouts import OptOutSource
 from aiogotoconnect.sms.phone import normalize_phone
-from aiogotoconnect.sms.server.status import IncomingError, StatusPayload
+from aiogotoconnect.sms.server.status import CallsStatus, IncomingError, StatusPayload
 from aiogotoconnect.sms.store import FileStore, GoToSmsStore, Json, MemoryStore, SqliteStore
 from aiogotoconnect.sms.types import (
     VERSION,
@@ -43,6 +43,7 @@ __all__ = [
     "VERSION",
     "Authorize",
     "AuthorizeRequest",
+    "CallsStatus",
     "ConfigField",
     "DecryptError",
     "FileStore",

@@ -28,6 +28,12 @@ from typing import Any
 from urllib.parse import quote
 
 from aiogotoconnect.sms.config import ConfigResolver
+from aiogotoconnect.sms.errors import (
+    GoToApiError,
+    LoginExpiredError,
+    NotConfiguredError,
+    TemporaryError,
+)
 from aiogotoconnect.sms.http import GoToHttp, error_name
 from aiogotoconnect.sms.inbound.poller import _ms
 from aiogotoconnect.sms.log import iso_ms
@@ -55,6 +61,13 @@ DOUBLE_RING_MS = 120_000
 SEEN_CAP = 400
 PAGE_SIZE = "100"
 MAX_PAGES = 50
+# While GoTo refuses the call reports (scope missing), look only this often. A 401 makes
+# GoToHttp refresh the token before giving up; every two minutes, for good, would be abuse.
+REFUSED_BACKOFF_MS = 3_600_000
+SCOPE_MESSAGE = (
+    "GoTo refused the call reports. Enable the scope cr.v1.read on the OAuth client, "
+    "then reconnect."
+)
 NAME_MAX = 40
 NUMBER_MAX = 20
 
@@ -110,6 +123,9 @@ class CallWatcher:
         self._loop_task: asyncio.Task[None] | None = None
         self._stopped: asyncio.Task[None] | None = None
         self._current: asyncio.Task[int] | None = None
+        # When GoTo last refused the call reports (epoch ms). In memory only, so a restart looks
+        # once before backing off again.
+        self._refused_at: float | None = None
 
     @property
     def running(self) -> bool:
@@ -194,6 +210,35 @@ class CallWatcher:
                 return _dict(kind.get("caller")), report
         return None
 
+    async def _failed(self, err: Exception, now: float) -> None:
+        """Records why the look failed, for `status()["calls"]`. The cursor is left alone, so the
+        next good look reads the same window."""
+        error: dict[str, Json]
+        if isinstance(err, LoginExpiredError) or (
+            isinstance(err, GoToApiError) and err.status == 403
+        ):
+            if await self._store.get(self._tenant, "login_expired") is True:
+                # The login itself is dead (no request went out): say that, not "scope".
+                error = {"error": "login_expired", "message": str(err)}
+            else:
+                # GoToHttp raises LoginExpiredError when a freshly refreshed token gets a second
+                # 401. For this API that means the scope is missing, not that the login is gone:
+                # nothing here marks the login expired, and texting carries on.
+                status = err.status if isinstance(err, GoToApiError) else 401
+                error = {"error": "calls_scope", "message": SCOPE_MESSAGE, "gotoStatus": status}
+                self._refused_at = now
+        elif isinstance(err, GoToApiError):
+            error = {"error": "goto_api", "message": str(err), "gotoStatus": err.status}
+        else:
+            error = {"error": "goto_unreachable", "message": "GoTo could not be reached"}
+        previous = await self._store.get(self._tenant, ERROR_KEY)
+        if previous != error:
+            await self._store.set(self._tenant, ERROR_KEY, error)
+            if error["error"] == "calls_scope":
+                self._logger.warning("goto-sms: %s", SCOPE_MESSAGE)
+            else:
+                self._logger.warning("goto-sms: checking for calls failed (%s)", error["error"])
+
     async def _load_seen(self) -> list[tuple[str, str, float]]:
         stored = await self._store.get(self._tenant, SEEN_KEY)
         seen: list[tuple[str, str, float]] = []
@@ -221,17 +266,31 @@ class CallWatcher:
             return 0
 
         now = self._now()
+        if self._refused_at is not None and now - self._refused_at < REFUSED_BACKOFF_MS:
+            return 0
         cursor = _ms(await self._store.get(self._tenant, CURSOR_KEY))
         if math.isnan(cursor):
-            # The first look ever: start from now. Old calls are never imported.
+            # The first look ever: start from now. Old calls are never imported; the request
+            # below still goes out (an empty window), so a missing scope shows up at once.
             await self._store.set(self._tenant, SINCE_KEY, iso_ms(now))
             await self._store.set(self._tenant, CURSOR_KEY, iso_ms(now))
-            return 0
+            start = now
+        else:
+            start = max(cursor - REACH_BACK_MS, now - MAX_LOOKBACK_MS)
         since = _ms(await self._store.get(self._tenant, SINCE_KEY))
-        start = max(cursor - REACH_BACK_MS, now - MAX_LOOKBACK_MS)
-        summaries, complete = await self._summaries(
-            {"accountKey": account_key, "startTime": _iso_s(start), "endTime": _iso_s(now)}
-        )
+        try:
+            summaries, complete = await self._summaries(
+                {"accountKey": account_key, "startTime": _iso_s(start), "endTime": _iso_s(now)}
+            )
+        except NotConfiguredError:
+            self._logger.debug("goto-sms: call check skipped; GoTo is not connected")
+            return 0
+        except (LoginExpiredError, GoToApiError, TemporaryError) as err:
+            await self._failed(err, now)
+            return 0
+        self._refused_at = None
+        if await self._store.get(self._tenant, ERROR_KEY) is not None:
+            await self._store.delete(self._tenant, ERROR_KEY)
 
         seen = await self._load_seen()
         known = {i for i, _, _ in seen}

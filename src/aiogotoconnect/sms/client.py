@@ -42,6 +42,7 @@ from aiogotoconnect.sms.errors import (
     TemporaryError,
 )
 from aiogotoconnect.sms.http import create_goto_http, error_name
+from aiogotoconnect.sms.inbound.calls import CallWatcher
 from aiogotoconnect.sms.inbound.keywords import DEFAULT_REPLIES, KeywordReplies
 from aiogotoconnect.sms.inbound.poller import Poller
 from aiogotoconnect.sms.inbound.processor import InboundProcessor, MessageHandler, call_handlers
@@ -378,6 +379,17 @@ class GoToSms:
             logger=logger,
             options=o,
         )
+        if o.watch_calls:
+            c.calls = CallWatcher(
+                http=http,
+                config=config,
+                store=store,
+                tenant=tenant,
+                emit=self._emit_call,
+                interval_s=o.call_poll_interval_s,
+                now=now,
+                logger=logger,
+            )
         self._core = c
 
         await self._claim_lock(c)
@@ -389,6 +401,9 @@ class GoToSms:
             self._lock_task = asyncio.get_running_loop().create_task(self._lock_loop())
         if await c.incoming_mode() == "polling":
             c.poller.start()
+        # Calls are polled whatever the mode for texts: there is no webhook path for them here.
+        if c.calls is not None:
+            c.calls.start()
         return c
 
     async def close(self) -> None:
@@ -408,6 +423,9 @@ class GoToSms:
         if c is not None:
             c.poller.stop()
             await c.poller.idle()
+            if c.calls is not None:
+                c.calls.stop()
+                await c.calls.idle()
             if c.inflight:
                 # wait, not gather: if close() itself is cancelled, post-204 work keeps running.
                 await asyncio.wait(list(c.inflight))

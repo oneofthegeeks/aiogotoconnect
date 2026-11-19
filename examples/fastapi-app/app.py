@@ -24,6 +24,7 @@ from aiogotoconnect.sms import (
     DEFAULT_API_BASE,
     DEFAULT_AUTH_BASE,
     AuthorizeRequest,
+    InboundCall,
     InboundMessage,
     create_goto_sms,
 )
@@ -58,6 +59,8 @@ sms = create_goto_sms(
     # Overridden only by the e2e test, which points both at a fake GoTo (unset in real use).
     auth_base_url=os.environ.get("GOTO_SMS_AUTH_BASE_URL") or DEFAULT_AUTH_BASE,
     api_base_url=os.environ.get("GOTO_SMS_API_BASE_URL") or DEFAULT_API_BASE,
+    # Opt in to on("call") below. Needs the scope cr.v1.read on the GoTo OAuth client.
+    watch_calls=os.environ.get("GOTO_SMS_WATCH_CALLS") == "1",
 )
 
 
@@ -68,6 +71,17 @@ def on_message(message: InboundMessage) -> None:
 
 
 sms.on("message", on_message)
+
+
+def on_call(call: InboundCall) -> None:
+    """Logs that someone rang the sending number: the masked caller and GoTo's outcome. The
+    caller ID name is the caller's own text, so it is never logged."""
+    tail = call.from_[-4:] if len(call.from_) > 4 else ""
+    log.info("call from ***%s (%s)", tail, call.outcome or "no outcome")
+
+
+if os.environ.get("GOTO_SMS_WATCH_CALLS") == "1":
+    sms.on("call", on_call)
 
 
 @asynccontextmanager

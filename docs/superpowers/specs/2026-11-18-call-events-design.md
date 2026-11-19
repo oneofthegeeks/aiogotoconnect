@@ -184,6 +184,17 @@ numbers and names never appear at INFO or above, matching the rule for text bodi
 
 One process per store still applies; two processes would both deliver.
 
+## Changed during the build (2026-11-18, after the live check and the final review)
+
+- The reach-back is **2 hours**, not 15 minutes: the list is searched by when a call started and a report appears only
+  when it ends, so 15 minutes would have lost every call longer than that.
+- The double-ring rule needs the **same outcome** as well as the same caller within 120 seconds, and applies only to a
+  caller number that normalises to E.164. A voicemail followed by a missed call is two events.
+- The hourly back-off while refused ends as soon as the stored login changes (a reconnect or a renewed token).
+- The first look makes one request over an empty window, so a missing scope shows at once.
+- A fourth error code, `login_expired`, for a login that is really dead.
+- A summary whose caller has no `type` at all is settled by the full report.
+
 ## Tests
 
 `tests/sms/fake_goto.py` learns the two endpoints. `tests/sms/test_calls.py` covers: first tick imports nothing; an

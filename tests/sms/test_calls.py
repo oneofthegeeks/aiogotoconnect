@@ -300,14 +300,14 @@ async def test_inbound_call_to_the_sending_number_is_delivered_once(setup: RigFa
     assert rig.report_fetches() == 0
 
 
-async def test_summaries_are_asked_for_the_account_with_a_15_minute_reach_back(
+async def test_summaries_are_asked_for_the_account_with_a_two_hour_reach_back(
     setup: RigFactory,
 ) -> None:
     rig = await (await setup()).started()
     await rig.look()
     q = rig.summaries()[-1]
     assert q["accountKey"] == ["acct-1"]
-    assert q["startTime"] == ["2026-10-27T09:45:00Z"]  # cursor (10:00) - 15 min
+    assert q["startTime"] == ["2026-10-27T08:00:00Z"]  # cursor (10:00) - 2 h
     assert q["endTime"] == ["2026-10-27T10:02:00Z"]
 
 
@@ -504,7 +504,7 @@ async def test_old_seen_entries_are_dropped_down_to_the_cap(setup: RigFactory) -
     await rig.look()
     seen = await rig.store.get(T, "calls:seen")
     assert isinstance(seen, list) and len(seen) == 450
-    rig.clock.t += 30 * MIN  # all of them are now older than the reach-back
+    rig.clock.t += 180 * MIN  # all of them are now older than the reach-back
     await rig.look()
     seen = await rig.store.get(T, "calls:seen")
     assert isinstance(seen, list) and len(seen) == 400
@@ -894,3 +894,56 @@ async def test_start_twice_starts_one_watcher(live: Callable[..., Awaitable[Live
     first = rig.sms.core.calls
     await rig.sms.start()
     assert rig.sms.core.calls is first
+
+
+# --- Final review fixes ---
+
+
+async def test_a_new_login_lifts_the_back_off(setup: RigFactory) -> None:
+    """The admin enables the scope and reconnects: the next look must go out, not wait an hour."""
+    rig = await (await setup()).started()
+    rig.call("c1", minutes_ago=1)
+    rig.fake.fail_next("GET", SUMMARIES, 403)
+    assert await rig.look() == 0
+    assert await rig.look() == 0  # same login: backing off
+    await rig.auth.force_refresh()  # what a reconnect does to the stored login: new tokens
+    assert await rig.look() == 1
+    assert await rig.store.get(T, "calls:error") is None
+
+
+async def test_inbound_summary_without_a_caller_type_falls_back_to_the_report(
+    setup: RigFactory,
+) -> None:
+    rig = await (await setup()).started()
+    rig.call("c1", minutes_ago=1, summary_has_type=False)
+    rig.call("c2", minutes_ago=0.5, summary_has_type=False, dialled=OTHER_LINE)
+    assert await rig.look() == 1
+    assert ids(rig) == ["c1"]
+    assert rig.report_fetches() == 2
+
+
+async def test_voicemail_then_missed_from_the_same_caller_are_two_events(
+    setup: RigFactory,
+) -> None:
+    rig = await (await setup()).started()
+    rig.call("c1", minutes_ago=1.5, outcome="LEFT_DIAL_PLAN")
+    rig.call("c2", minutes_ago=0.2, outcome="MISSED")  # 78 s later
+    assert await rig.look() == 2
+    assert [c.outcome for c in rig.got] == ["LEFT_DIAL_PLAN", "MISSED"]
+
+
+async def test_two_callers_shown_as_the_same_text_both_deliver(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    rig.call("c1", minutes_ago=1.5, caller_number="anonymous")
+    rig.call("c2", minutes_ago=0.5, caller_number="anonymous")
+    assert await rig.look() == 2
+    assert [c.from_ for c in rig.got] == ["anonymous", "anonymous"]
+
+
+async def test_a_long_call_reported_after_it_ends_is_delivered(setup: RigFactory) -> None:
+    rig = await (await setup()).started()
+    for _ in range(14):
+        assert await rig.look() == 0  # 28 quiet minutes while the call is still going
+    rig.call("long", minutes_ago=25, ended=iso_ms(rig.clock.t))
+    assert await rig.look() == 1
+    assert ids(rig) == ["long"]

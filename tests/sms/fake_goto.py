@@ -120,7 +120,8 @@ class FakeGoTo:
         # Calls served by the call-events-report routes: {"id", "created"} plus optional
         # "direction" (default INBOUND), "ended", "outcome" (default MISSED), "dialled" (the
         # number that was called), "caller_number", "caller_name", "summary_has_dialled" (False:
-        # the summary omits the dialled number, as the full report then must be read) and
+        # the summary omits the dialled number, as the full report then must be read),
+        # "summary_has_type" (False: the summary's caller has no `type` at all) and
         # "extra_participants" (prepended to the report's participants).
         self.calls: list[dict[str, Any]] = []
         # Summary items served verbatim after the ones built from `calls` (odd-shape tests).
@@ -381,12 +382,15 @@ class FakeGoTo:
         kind: dict[str, Any] = {"value": "LINE" if outbound else "PHONE_NUMBER"}
         if not outbound and c.get("summary_has_dialled", True):
             kind["number"] = c.get("dialled")
+        caller = self._caller(c)
+        if c.get("summary_has_type", True):
+            caller["type"] = kind
         item: dict[str, Any] = {
             "conversationSpaceId": c["id"],
             "accountKey": "acct-1",
             "callCreated": c["created"],
             "direction": c.get("direction") or "INBOUND",
-            "caller": {**self._caller(c), "type": kind},
+            "caller": caller,
             "callerOutcome": c.get("outcome", "MISSED"),
             "participants": [],
         }

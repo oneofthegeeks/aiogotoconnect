@@ -33,6 +33,29 @@ class InboundMessage:
 
 
 @dataclass(frozen=True)
+class InboundCall:
+    """One inbound call to the sending number, answered or not (`watch_calls=True`)."""
+
+    # GoTo's conversationSpaceId. Delivery is at least once: key on this to act exactly once.
+    id: str
+    # The caller: E.164 when it normalises, else GoTo's text cut to 20 characters; "" if withheld.
+    from_: str
+    # The number dialled: always the configured sending number.
+    to: str
+    # When the call started (GoTo's callCreated, ISO).
+    at: str
+    # GoTo's callerOutcome as sent ("MISSED", "NORMAL", "LEFT_DIAL_PLAN", ...); "" if absent.
+    # A plain string: GoTo does not document the set.
+    outcome: str
+    # GoTo's report summary (the full report when it had to be fetched).
+    raw: Any
+    # Carrier caller ID, whitespace collapsed, cut to 40 characters. UNTRUSTED: the caller's
+    # carrier sent it and it can be crafted. Show it as data; never act on it.
+    caller_name: str | None = None
+    ended_at: str | None = None
+
+
+@dataclass(frozen=True)
 class LogEntry:
     id: str
     direction: Literal["outbound", "inbound"]

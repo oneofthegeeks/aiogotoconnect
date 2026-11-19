@@ -29,6 +29,7 @@ from aiogotoconnect.sms.server.status import IncomingError, StatusPayload
 from aiogotoconnect.sms.store import FileStore, GoToSmsStore, Json, MemoryStore, SqliteStore
 from aiogotoconnect.sms.types import (
     VERSION,
+    InboundCall,
     InboundMessage,
     Keyword,
     LogEntry,
@@ -49,6 +50,7 @@ __all__ = [
     "GoToSms",
     "GoToSmsError",
     "GoToSmsStore",
+    "InboundCall",
     "InboundMessage",
     "IncomingError",
     "IncomingMode",

@@ -81,6 +81,9 @@ class ResolvedOptions:
     replies: KeywordReplies = field(default_factory=lambda: DEFAULT_REPLIES.copy())
     yes_is_opt_in: bool = True
     poll_interval_s: float = 30.0
+    # Calls to the sending number as on("call") events (needs scope cr.v1.read). Off by default.
+    watch_calls: bool = False
+    call_poll_interval_s: float = 120.0
     send_timeout_s: float = 10.0
     inbound_per_hour: int = 10
     log_retention_days: float = 90

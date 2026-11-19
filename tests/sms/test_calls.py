@@ -746,6 +746,28 @@ async def test_status_has_no_calls_key_when_off() -> None:
         await fake.close()
 
 
+async def test_required_scopes_gain_the_call_scope_only_when_watching() -> None:
+    fake = await start_fake_goto()
+    off = await connected_sms(fake)
+    on, _ = await _watching_sms(fake)
+    try:
+        assert "cr.v1.read" not in (await off.status())["requiredScopes"]
+        scopes = (await on.status())["requiredScopes"]
+        assert scopes[-1] == "cr.v1.read"
+        assert scopes[:-1] == (await off.status())["requiredScopes"]
+    finally:
+        await off.close()
+        await on.close()
+        await fake.close()
+
+
+def test_required_scopes_list_the_call_scope_even_when_startup_failed() -> None:
+    from aiogotoconnect.sms.server.status import required_scopes
+
+    assert required_scopes(_sms(watch_calls=True)._options)[-1] == "cr.v1.read"
+    assert "cr.v1.read" not in required_scopes(_sms()._options)
+
+
 async def test_status_calls_watching_true_after_a_good_look() -> None:
     fake = await start_fake_goto()
     sms, watcher = await _watching_sms(fake)

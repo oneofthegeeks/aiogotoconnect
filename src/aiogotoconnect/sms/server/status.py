@@ -22,6 +22,14 @@ REQUIRED_SCOPES: list[str] = [
     "voice-admin.v1.read",
 ]
 
+# Added to `requiredScopes` only when call watching is on (contract: "Calls").
+CALLS_SCOPE = "cr.v1.read"
+
+
+def required_scopes(options: ResolvedOptions) -> list[str]:
+    return [*REQUIRED_SCOPES, CALLS_SCOPE] if options.watch_calls else list(REQUIRED_SCOPES)
+
+
 # Store key: why moving the webhook to a newly selected account failed (`incoming.error`).
 INBOUND_ERROR = "inbound:error"
 # Store keys written by inbound/calls.py (not imported from there: this module stays light).
@@ -137,7 +145,7 @@ async def build_status(
         bare: StatusPayload = {
             "version": VERSION,
             "redirectUri": redirect_uri,
-            "requiredScopes": list(REQUIRED_SCOPES),
+            "requiredScopes": required_scopes(options),
             "configured": False,
             "connected": False,
             "loginExpired": False,
@@ -173,7 +181,7 @@ async def build_status(
     s: StatusPayload = {
         "version": VERSION,
         "redirectUri": redirect_uri,
-        "requiredScopes": list(REQUIRED_SCOPES),
+        "requiredScopes": required_scopes(options),
         "configured": configured,
         "connected": auth.connected,
         "loginExpired": auth.login_expired,

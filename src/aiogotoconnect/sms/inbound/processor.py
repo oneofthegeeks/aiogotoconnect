@@ -84,13 +84,13 @@ def _from_row(v: Json, fallback_at: str) -> InboundMessage | None:
     )
 
 
-async def call_handlers(
-    handlers: Iterable[MessageHandler], m: InboundMessage, logger: logging.Logger
+async def call_handlers[T](
+    handlers: Iterable[Callable[[T], Awaitable[None] | None]], m: T, logger: logging.Logger
 ) -> None:
     """Calls each handler in turn, awaiting async ones in the caller's task (no new tasks).
 
     A handler that raises is logged and the rest still run. Only the error's name is logged at
-    WARNING: a handler's message could quote the text. The traceback goes to DEBUG.
+    WARNING: a handler's message could quote the text (or a caller's number). The traceback goes to DEBUG.
     CancelledError (a BaseException) still propagates.
     """
     for handler in list(handlers):

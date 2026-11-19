@@ -28,6 +28,7 @@ TYPES = [
     "Source",
     "OptOutSource",
     "KeywordReplies",
+    "InboundCall",
     "DEFAULT_AUTH_BASE",
     "DEFAULT_API_BASE",
 ]

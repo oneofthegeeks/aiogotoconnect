@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, overload
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -52,7 +52,7 @@ from aiogotoconnect.sms.send import Sender
 from aiogotoconnect.sms.server.status import StatusPayload, build_status, startup_error_text
 from aiogotoconnect.sms.store.file import FileStore
 from aiogotoconnect.sms.store.types import GoToSmsStore
-from aiogotoconnect.sms.types import InboundMessage, LogEntry, SendResult
+from aiogotoconnect.sms.types import InboundCall, InboundMessage, LogEntry, SendResult
 
 if TYPE_CHECKING:
     from aiogotoconnect.sms.server.asgi import ASGIApp, RouterSource
@@ -73,6 +73,9 @@ _HTTP_ABSOLUTE = re.compile(r"^https?://", re.IGNORECASE)
 # Whitespace or control characters can hide a scheme from a human reader; never needed. Python's
 # \s lacks U+FEFF, which JS's \s (Node's check) includes.
 _NOT_PLAIN = re.compile(r"[\s﻿\x00-\x1f\x7f]")
+
+
+CallHandler = Callable[[InboundCall], Awaitable[None] | None]
 
 
 def _require_cryptography() -> None:
@@ -222,6 +225,8 @@ class GoToSms:
         self._owned_session: aiohttp.ClientSession | None = None
         # An insertion-ordered set (Node uses a Set): registering a handler twice runs it once.
         self._listeners: dict[MessageHandler, None] = {}
+        self._call_listeners: dict[CallHandler, None] = {}
+        self._call_warned = False
         self._lock_owner = str(uuid.uuid4())
         self._core: Core | None = None
         self._closed = False
@@ -484,21 +489,45 @@ class GoToSms:
         # logs a raising handler (sync or async) and keeps going with the rest.
         await call_handlers(list(self._listeners), m, self._logger)
 
-    def on(self, event: Literal["message"], fn: MessageHandler) -> Self:
-        """Registers an inbound-text handler (sync or async). Returns self, for chaining."""
+    async def _emit_call(self, call: InboundCall) -> None:
+        # Same rules as _emit: a snapshot, one handler at a time, a raising handler is logged.
+        await call_handlers(list(self._call_listeners), call, self._logger)
+
+    @overload
+    def on(self, event: Literal["message"], fn: MessageHandler) -> Self: ...
+    @overload
+    def on(self, event: Literal["call"], fn: CallHandler) -> Self: ...
+    def on(self, event: str, fn: Callable[[Any], Awaitable[None] | None]) -> Self:
+        """Registers a handler (sync or async) for inbound texts ("message") or for inbound calls
+        to the sending number ("call", which needs `watch_calls=True`). Returns self, for chaining."""
         self._check_event(event)
-        self._listeners[fn] = None
+        if event == "call":
+            if not self._options.watch_calls and not self._call_warned:
+                self._call_warned = True
+                self._logger.warning(
+                    'goto-sms: an on("call") handler was registered, but calls are not being '
+                    "watched; pass watch_calls=True to create_goto_sms"
+                )
+            self._call_listeners[fn] = None
+        else:
+            self._listeners[fn] = None
         return self
 
-    def off(self, event: Literal["message"], fn: MessageHandler) -> Self:
+    @overload
+    def off(self, event: Literal["message"], fn: MessageHandler) -> Self: ...
+    @overload
+    def off(self, event: Literal["call"], fn: CallHandler) -> Self: ...
+    def off(self, event: str, fn: Callable[[Any], Awaitable[None] | None]) -> Self:
         self._check_event(event)
-        self._listeners.pop(fn, None)
+        (self._call_listeners if event == "call" else self._listeners).pop(fn, None)
         return self
 
     @staticmethod
     def _check_event(event: str) -> None:
-        if event != "message":
-            raise ValueError(f"goto-sms: unknown event {event!r}; the only event is 'message'")
+        if event not in ("message", "call"):
+            raise ValueError(
+                f"goto-sms: unknown event {event!r}; the events are 'message' and 'call'"
+            )
 
     async def _core_or_result(self) -> Core | SendResult:
         """The core, or a not_connected result when startup failed for lack of configuration."""
@@ -627,6 +656,8 @@ def create_goto_sms(
     replies: Mapping[str, str] | None = None,
     yes_is_opt_in: bool = True,
     poll_interval: float = 30.0,
+    watch_calls: bool = False,
+    call_poll_interval: float = 120.0,
     send_timeout: float = 10.0,
     inbound_per_hour: int = 10,
     log_retention_days: float = 90,
@@ -673,6 +704,8 @@ def create_goto_sms(
         replies=_merge_replies(replies),
         yes_is_opt_in=yes_is_opt_in,
         poll_interval_s=poll_interval,
+        watch_calls=watch_calls,
+        call_poll_interval_s=call_poll_interval,
         send_timeout_s=send_timeout,
         inbound_per_hour=inbound_per_hour,
         log_retention_days=log_retention_days,

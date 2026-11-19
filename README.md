@@ -33,7 +33,7 @@ asyncio.run(main())
 
 ## SMS for web apps
 
-`aiogotoconnect.sms` is a Python port of [`@oneofthegeeks/goto-sms`](https://github.com/oneofthegeeks/goto-sms): a guided setup page where an admin connects GoTo, picks the sending number and enables inbound texts, plus `send()` and an `on("message")` hook. It is a plain ASGI app with no web-framework dependency, and it follows the same HTTP contract and conformance checklist as the Node package ([C1-C25 map](docs/conformance.md)).
+`aiogotoconnect.sms` is a Python port of [`@oneofthegeeks/goto-sms`](https://github.com/oneofthegeeks/goto-sms): a guided setup page where an admin connects GoTo, picks the sending number and enables inbound texts, plus `send()`, an `on("message")` hook and, opt-in, an `on("call")` hook for calls to that number. It is a plain ASGI app with no web-framework dependency, and it follows the same HTTP contract and conformance checklist as the Node package ([C1-C25 map](docs/conformance.md)).
 
 ```bash
 pip install 'aiogotoconnect[sms]'
@@ -91,6 +91,31 @@ Things to know:
 - **Use `dedupe_key` for exactly-once.** A send without one that is cancelled mid-request may still go out, and sending again then texts twice.
 - `GoToApiError` here is not the top-level `aiogotoconnect.GoToApiError`; import the SMS errors from `aiogotoconnect.sms`.
 
+### Calls to your number
+
+With `watch_calls=True` the package also tells you when someone **calls** the sending number, the same way it hands you a text:
+
+```python
+sms = create_goto_sms(..., watch_calls=True)
+
+async def on_call(call):  # InboundCall
+    if call.outcome == "MISSED":
+        print(call.from_, call.caller_name, call.at)
+
+sms.on("call", on_call)
+```
+
+- **Enable the scope `cr.v1.read`** on your GoTo OAuth client, then reconnect on the setup page. With `watch_calls=True` the status payload lists it in `requiredScopes`. Until then `status()["calls"]` reads `{"watching": False, "error": {"error": "calls_scope", ...}}`, the package looks only once an hour (and again as soon as the login changes, so a reconnect is picked up at the next look), and texting is unaffected.
+- **Every inbound call to the sending number is delivered**, answered or not. Filter on `call.outcome`: GoTo's own value, e.g. `MISSED`, `NORMAL`, or `LEFT_DIAL_PLAN` (a dial-plan step such as voicemail took it). GoTo does not document the full set, so it is a plain string. Calls to other numbers on the account, and outbound calls, never arrive.
+- **Register your handler before or right after `start()`.** A look does nothing while no `on("call")` handler is registered, so no call is ever marked seen with nobody to hear it.
+- **After a long outage, or once a missing scope is fixed, up to 24 hours of calls can arrive at once** (those that started after switch-on). A handler that reacts to the caller should check `call.at`.
+- **It polls** GoTo's call reports every `call_poll_interval` seconds (default 120), whatever the mode for texts. A report exists only once the call has ended, so the event comes after the call, not while it rings. A call that lasts longer than two hours may not be noticed.
+- **Nothing from before switch-on.** The first look starts from now; a call ringing at that moment can be missed.
+- **At least once.** A call is marked seen after your handlers return, so a crash in between can deliver it again. Key on `call.id` if acting twice would matter. One ring that GoTo reports as two conversations (the same caller number with the same outcome within two minutes) is one event; so is a genuine second call that matches all three. A different outcome, or a withheld number, is always its own event.
+- **Caller ID is untrusted.** `call.caller_name` is whatever the caller's carrier sent (cut to 40 characters) and can be crafted: show it as data, never act on it. `call.from_` is `""` when the number is withheld. Neither appears in the package's logs at INFO or above.
+- **Cap what a stranger can trigger.** Anyone can ring your number as often as they like. If your handler sends a text or does other work per call, rate-limit it yourself; the package does not.
+- `status()["calls"]` (and `GET /api/status`) is present only with `watch_calls=True`. Error codes: `calls_scope`, `login_expired`, `goto_api`, `goto_unreachable`. The setup page does not show it yet.
+
 ### Options
 
 All keyword-only. Credentials fall back to the environment variables below; empty values and the literal `CHANGEME` count as unset.
@@ -112,6 +137,8 @@ All keyword-only. Credentials fall back to the environment variables below; empt
 | `replies` | built-in | Dict with `stop`, `start`, `help` reply texts. |
 | `yes_is_opt_in` | `True` | A `YES` text counts as `START`. |
 | `poll_interval` | `30.0` | Seconds, polling mode only. |
+| `watch_calls` | `False` | Emit `on("call")` for inbound calls to the sending number. Needs scope `cr.v1.read`. See [Calls to your number](#calls-to-your-number). |
+| `call_poll_interval` | `120.0` | Seconds between looks at the call reports. |
 | `send_timeout` | `10.0` | Seconds; a timeout after sending is `uncertain` and never retried. |
 | `inbound_per_hour` | `10` | Per sender; extra texts are logged, not delivered. |
 | `log_retention_days` | `90` | Message log retention. |

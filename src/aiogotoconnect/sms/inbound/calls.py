@@ -120,7 +120,11 @@ class CallWatcher:
         interval_s: float,
         now: Callable[[], float],
         logger: logging.Logger,
+        has_listeners: Callable[[], bool] | None = None,
     ) -> None:
+        # While this says False a look does nothing at all: a call "delivered" to no handler would be
+        # marked seen and lost (a host that registers its handler a moment after start()).
+        self._has_listeners = has_listeners
         self._http = http
         self._config = config
         self._store = store
@@ -278,6 +282,8 @@ class CallWatcher:
             self._logger.debug("goto-sms: call check skipped; no account or sending number chosen")
             return 0
 
+        if self._has_listeners is not None and not self._has_listeners():
+            return 0
         now = self._now()
         if (
             self._refused_at is not None

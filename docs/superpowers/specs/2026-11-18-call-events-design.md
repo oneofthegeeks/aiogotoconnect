@@ -191,7 +191,8 @@ One process per store still applies; two processes would both deliver.
 - The double-ring rule needs the **same outcome** as well as the same caller within 120 seconds, and applies only to a
   caller number that normalises to E.164. A voicemail followed by a missed call is two events.
 - The hourly back-off while refused ends as soon as the stored login changes (a reconnect or a renewed token).
-- The first look makes one request over an empty window, so a missing scope shows at once.
+- The first look makes one request over the last minute (GoTo answers 400 to an empty window: seen live when the
+  board switched over), so a missing scope shows at once. What it finds is only marked seen.
 - A fourth error code, `login_expired`, for a login that is really dead.
 - A summary whose caller has no `type` at all is settled by the full report.
 

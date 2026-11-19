@@ -66,6 +66,8 @@ MAX_LOOKBACK_MS = 24 * 3_600_000
 DOUBLE_RING_MS = 120_000
 # Seen entries older than the reach-back are dropped, oldest first, down to this many.
 SEEN_CAP = 400
+# The window of the very first look. GoTo answers 400 to an empty one (startTime == endTime).
+FIRST_LOOK_MS = 60_000
 PAGE_SIZE = "100"
 MAX_PAGES = 50
 # While GoTo refuses the call reports (scope missing), look only this often. A 401 makes
@@ -285,11 +287,12 @@ class CallWatcher:
             return 0
         cursor = _ms(await self._store.get(self._tenant, CURSOR_KEY))
         if math.isnan(cursor):
-            # The first look ever: start from now. Old calls are never imported; the request
-            # below still goes out (an empty window), so a missing scope shows up at once.
+            # The first look ever: start from now. Old calls are never imported: whatever the
+            # request below finds started before `since` and is only marked seen. It still goes
+            # out, so a missing scope shows up at once.
             await self._store.set(self._tenant, SINCE_KEY, iso_ms(now))
             await self._store.set(self._tenant, CURSOR_KEY, iso_ms(now))
-            start = now
+            start = now - FIRST_LOOK_MS
         else:
             start = max(cursor - REACH_BACK_MS, now - MAX_LOOKBACK_MS)
         since = _ms(await self._store.get(self._tenant, SINCE_KEY))

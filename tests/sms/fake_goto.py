@@ -117,6 +117,16 @@ class FakeGoTo:
         self.channels: list[dict[str, Any]] = []
         # Messaging subscriptions; id is `sub-<n>`.
         self.subscriptions: list[dict[str, Any]] = []
+        # Calls served by the call-events-report routes: {"id", "created"} plus optional
+        # "direction" (default INBOUND), "ended", "outcome" (default MISSED), "dialled" (the
+        # number that was called), "caller_number", "caller_name", "summary_has_dialled" (False:
+        # the summary omits the dialled number, as the full report then must be read) and
+        # "extra_participants" (prepended to the report's participants).
+        self.calls: list[dict[str, Any]] = []
+        # Summary items served verbatim after the ones built from `calls` (odd-shape tests).
+        self.call_summaries_raw: list[Any] = []
+        # Every call-events-report request path, in order.
+        self.call_report_hits: list[str] = []
         self._install_routes()
 
     @property
@@ -232,6 +242,8 @@ class FakeGoTo:
             "/notification-channel/v1/channels",
             lambda _r: FakeResponse(200, {"items": self.channels}),
         )
+        self.route("GET", "/call-events-report/v1/report-summaries", self._call_summaries)
+        self.route("GET", "/call-events-report/v1/reports/", self._call_report)
         self.route("POST", "/notification-channel/v1/channels/", self._create_channel)
         self.route("GET", "/messaging/v2/subscriptions", self._list_subscriptions)
         self.route("POST", "/messaging/v2/subscriptions", self._create_subscription)
@@ -352,6 +364,71 @@ class FakeGoTo:
         # Served in reverse order on purpose: callers must sort, not trust the API's order.
         items.reverse()
         return self._paged(req, items)
+
+    # Call reports, in the shape observed live on 2026-11-19: the summary names the dialled number
+    # in caller.type.number; the full report names it in a PHONE_NUMBER participant's type.
+    @staticmethod
+    def _caller(c: dict[str, Any]) -> dict[str, Any]:
+        caller: dict[str, Any] = {}
+        if c.get("caller_name") is not None:
+            caller["name"] = c["caller_name"]
+        if c.get("caller_number") is not None:
+            caller["number"] = c["caller_number"]
+        return caller
+
+    def _call_summary(self, c: dict[str, Any]) -> dict[str, Any]:
+        outbound = c.get("direction") == "OUTBOUND"
+        kind: dict[str, Any] = {"value": "LINE" if outbound else "PHONE_NUMBER"}
+        if not outbound and c.get("summary_has_dialled", True):
+            kind["number"] = c.get("dialled")
+        item: dict[str, Any] = {
+            "conversationSpaceId": c["id"],
+            "accountKey": "acct-1",
+            "callCreated": c["created"],
+            "direction": c.get("direction") or "INBOUND",
+            "caller": {**self._caller(c), "type": kind},
+            "callerOutcome": c.get("outcome", "MISSED"),
+            "participants": [],
+        }
+        if c.get("ended"):
+            item["callEnded"] = c["ended"]
+        return item
+
+    def _call_summaries(self, req: FakeRequest) -> FakeResponse:
+        self.call_report_hits.append(req.path)
+        if not req.query.get("accountKey"):
+            return FakeResponse(400, {"error": "accountKey required"})
+        start = _timestamp_ms(req.query.get("startTime", ""))
+        end = _timestamp_ms(req.query.get("endTime", ""))
+        items: list[Any] = [
+            self._call_summary(c) for c in self.calls if start <= _timestamp_ms(c["created"]) <= end
+        ]
+        # Newest first on purpose: callers must sort, not trust the API's order.
+        items.reverse()
+        return self._paged(req, items + self.call_summaries_raw)
+
+    def _call_report(self, req: FakeRequest) -> FakeResponse:
+        self.call_report_hits.append(req.path)
+        call_id = req.pathname.rsplit("/", 1)[-1]
+        for c in self.calls:
+            if c["id"] == call_id:
+                mine = {
+                    "type": {
+                        "value": "PHONE_NUMBER",
+                        "number": c.get("dialled"),
+                        "caller": self._caller(c),
+                    }
+                }
+                return FakeResponse(
+                    200,
+                    {
+                        "conversationSpaceId": call_id,
+                        "callCreated": c["created"],
+                        "direction": c.get("direction") or "INBOUND",
+                        "participants": [*c.get("extra_participants", []), mine],
+                    },
+                )
+        return FakeResponse(404, {"error": "not_found"})
 
     def _create_channel(self, req: FakeRequest) -> FakeResponse:
         channel = {**json.loads(req.body), "channelId": f"ch-{len(self.channels) + 1}"}

@@ -1,5 +1,6 @@
 """Calls to the sending number as events: on("call"), CallWatcher, status (no Node counterpart yet)."""
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -768,3 +769,128 @@ async def test_status_calls_carries_the_error() -> None:
     finally:
         await sms.close()
         await fake.close()
+
+
+# --- Task 5: wired into the client ---
+
+
+def _fake_call(id_: str, at_ms: float, **over: Any) -> dict[str, Any]:
+    return {
+        "id": id_,
+        "created": iso_ms(at_ms),
+        "dialled": FROM,
+        "caller_number": PEER,
+        "caller_name": "Pat Example",
+        **over,
+    }
+
+
+@dataclass
+class Live:
+    fake: FakeGoTo
+    sms: GoToSms
+    clock: Clock
+
+
+@pytest.fixture
+async def live() -> AsyncIterator[Callable[..., Awaitable[Live]]]:
+    made: list[Live] = []
+
+    async def make(**opts: Any) -> Live:
+        fake = await start_fake_goto()
+        clock = Clock()
+        sms = await connected_sms(
+            fake, now=lambda: clock.t, env={"GOTO_ACCOUNT_KEY": "acct-1"}, **opts
+        )
+        made.append(Live(fake, sms, clock))
+        return made[-1]
+
+    try:
+        yield make
+    finally:
+        for item in made:
+            await item.sms.close()
+            await item.fake.close()
+
+
+async def test_end_to_end_call_reaches_the_handler(live: Callable[..., Awaitable[Live]]) -> None:
+    rig = await live(watch_calls=True, call_poll_interval=3600.0)
+    got: list[InboundCall] = []
+    rig.sms.on("call", got.append)
+    watcher = rig.sms.core.calls
+    assert watcher is not None and watcher.running
+    await watcher.tick()  # the first look: sets the cursor
+    rig.clock.t += 2 * MIN
+    rig.fake.calls.append(_fake_call("c1", rig.clock.t - MIN))
+    assert await watcher.tick() == 1
+    assert [(c.id, c.from_, c.to) for c in got] == [("c1", PEER, FROM)]
+    assert (await rig.sms.status())["calls"] == {"watching": True}
+
+
+async def test_watch_calls_off_makes_no_call_report_requests(
+    live: Callable[..., Awaitable[Live]],
+) -> None:
+    rig = await live()
+    await asyncio.sleep(0.05)
+    assert rig.sms.core.calls is None
+    assert rig.fake.call_report_hits == []
+
+
+@pytest.mark.parametrize("mode", ["webhook", "polling", None])
+async def test_watcher_runs_in_every_incoming_mode(
+    live: Callable[..., Awaitable[Live]], mode: str | None
+) -> None:
+    from aiogotoconnect.sms import MemoryStore as Store
+
+    store = Store()
+    if mode:
+        await store.set("default", "inbound:mode", mode)
+    rig = await live(watch_calls=True, store=store)
+    watcher = rig.sms.core.calls
+    assert watcher is not None and watcher.running
+
+
+async def test_the_watcher_loop_looks_on_its_own(live: Callable[..., Awaitable[Live]]) -> None:
+    rig = await live(watch_calls=True, call_poll_interval=0.02)
+    for _ in range(100):
+        if len(rig.fake.call_report_hits) >= 2:
+            break
+        await asyncio.sleep(0.02)
+    assert len(rig.fake.call_report_hits) >= 2
+
+
+async def test_close_waits_for_a_running_call_handler(
+    live: Callable[..., Awaitable[Live]],
+) -> None:
+    rig = await live(watch_calls=True, call_poll_interval=3600.0)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(_c: InboundCall) -> None:
+        entered.set()
+        await release.wait()
+
+    rig.sms.on("call", slow)
+    core = rig.sms.core
+    watcher = core.calls
+    assert watcher is not None
+    await watcher.tick()
+    rig.clock.t += 2 * MIN
+    rig.fake.calls.append(_fake_call("c1", rig.clock.t - MIN))
+    look = asyncio.ensure_future(watcher.tick())
+    await entered.wait()
+    closing = asyncio.ensure_future(rig.sms.close())
+    await asyncio.sleep(0.05)
+    assert not closing.done()
+    release.set()
+    await closing
+    assert await look == 1
+    seen = await core.store.get(core.tenant, "calls:seen")
+    assert isinstance(seen, list) and [entry[0] for entry in seen] == ["c1"]
+    assert not watcher.running
+
+
+async def test_start_twice_starts_one_watcher(live: Callable[..., Awaitable[Live]]) -> None:
+    rig = await live(watch_calls=True, call_poll_interval=3600.0)
+    first = rig.sms.core.calls
+    await rig.sms.start()
+    assert rig.sms.core.calls is first

@@ -105,11 +105,11 @@ async def on_call(call):  # InboundCall
 sms.on("call", on_call)
 ```
 
-- **Enable the scope `cr.v1.read`** on your GoTo OAuth client, then reconnect on the setup page. Until then `status()["calls"]` reads `{"watching": False, "error": {"error": "calls_scope", ...}}`, the package looks only once an hour, and texting is unaffected.
+- **Enable the scope `cr.v1.read`** on your GoTo OAuth client, then reconnect on the setup page. Until then `status()["calls"]` reads `{"watching": False, "error": {"error": "calls_scope", ...}}`, the package looks only once an hour (and again as soon as the login changes, so a reconnect is picked up at the next look), and texting is unaffected.
 - **Every inbound call to the sending number is delivered**, answered or not. Filter on `call.outcome`: GoTo's own value, e.g. `MISSED`, `NORMAL`, or `LEFT_DIAL_PLAN` (a dial-plan step such as voicemail took it). GoTo does not document the full set, so it is a plain string. Calls to other numbers on the account, and outbound calls, never arrive.
-- **It polls** GoTo's call reports every `call_poll_interval` seconds (default 120), whatever the mode for texts. A report exists only once the call has ended, so the event comes after the call, not while it rings.
+- **It polls** GoTo's call reports every `call_poll_interval` seconds (default 120), whatever the mode for texts. A report exists only once the call has ended, so the event comes after the call, not while it rings. A call that lasts longer than two hours may not be noticed.
 - **Nothing from before switch-on.** The first look starts from now; a call ringing at that moment can be missed.
-- **At least once.** A call is marked seen after your handlers return, so a crash in between can deliver it again. Key on `call.id` if acting twice would matter. One ring that GoTo reports as two conversations (same caller within two minutes) is one event.
+- **At least once.** A call is marked seen after your handlers return, so a crash in between can deliver it again. Key on `call.id` if acting twice would matter. One ring that GoTo reports as two conversations (the same caller number with the same outcome within two minutes) is one event; so is a genuine second call that matches all three. A different outcome, or a withheld number, is always its own event.
 - **Caller ID is untrusted.** `call.caller_name` is whatever the caller's carrier sent (cut to 40 characters) and can be crafted: show it as data, never act on it. `call.from_` is `""` when the number is withheld. Neither appears in the package's logs at INFO or above.
 - **Cap what a stranger can trigger.** Anyone can ring your number as often as they like. If your handler sends a text or does other work per call, rate-limit it yourself; the package does not.
 - `status()["calls"]` (and `GET /api/status`) is present only with `watch_calls=True`. Error codes: `calls_scope`, `login_expired`, `goto_api`, `goto_unreachable`. The setup page does not show it yet.

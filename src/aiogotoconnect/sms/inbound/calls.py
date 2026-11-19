@@ -38,7 +38,7 @@ from aiogotoconnect.sms.http import GoToHttp, error_name
 from aiogotoconnect.sms.inbound.poller import _ms
 from aiogotoconnect.sms.log import iso_ms
 from aiogotoconnect.sms.phone import normalize_phone
-from aiogotoconnect.sms.store.types import GoToSmsStore, Json
+from aiogotoconnect.sms.store.types import GoToSmsStore, Json, json_equal
 from aiogotoconnect.sms.types import InboundCall
 
 SUMMARIES = "/call-events-report/v1/report-summaries"
@@ -46,16 +46,23 @@ REPORTS = "/call-events-report/v1/reports/"
 CURSOR_KEY = "calls:cursor"
 # When watching was first switched on. Calls that started before it are never delivered.
 SINCE_KEY = "calls:since"
-# [[id, caller, at_ms], ...]: every call already looked at. `caller` is set only for a call that
-# was delivered, so it doubles as the memory for the double-ring rule.
+# [[id, ring, at_ms], ...]: every call already looked at. `ring` is set only for a delivered
+# call whose caller number is a real one: "<E.164>|<outcome>", the memory for the double-ring
+# rule. It is "" for everything else.
 SEEN_KEY = "calls:seen"
 ERROR_KEY = "calls:error"
+# Written by oauth.py: the sealed token record. Read here only to notice that it changed.
+TOKENS_KEY = "tokens"
 
-# Each look reaches back this far before the cursor: a report appears only after the call ends.
-REACH_BACK_MS = 15 * 60_000
+# Each look reaches back this far before the cursor. A report appears only after the call ends,
+# and the list is searched by when the call STARTED, so this is also the longest call that can
+# still be noticed. (Whether GoTo filters on the start or the end is not documented; the start
+# is the safe assumption.)
+REACH_BACK_MS = 2 * 3_600_000
 # The furthest back a look ever reads, however stale the cursor (as poller.MAX_LOOKBACK_MS).
 MAX_LOOKBACK_MS = 24 * 3_600_000
-# One ring reported as two conversations: the same caller again within this long is not an event.
+# One ring reported as two conversations: the same caller with the same outcome again within
+# this long is not an event. A different outcome (voicemail, then a miss) is a second call.
 DOUBLE_RING_MS = 120_000
 # Seen entries older than the reach-back are dropped, oldest first, down to this many.
 SEEN_CAP = 400
@@ -126,6 +133,9 @@ class CallWatcher:
         # When GoTo last refused the call reports (epoch ms). In memory only, so a restart looks
         # once before backing off again.
         self._refused_at: float | None = None
+        # The stored login (the sealed token record) at that moment. A different one means the
+        # admin reconnected, or the token was renewed: worth one more look.
+        self._refused_login: Json = None
 
     @property
     def running(self) -> bool:
@@ -227,6 +237,7 @@ class CallWatcher:
                 status = err.status if isinstance(err, GoToApiError) else 401
                 error = {"error": "calls_scope", "message": SCOPE_MESSAGE, "gotoStatus": status}
                 self._refused_at = now
+                self._refused_login = await self._store.get(self._tenant, TOKENS_KEY)
         elif isinstance(err, GoToApiError):
             error = {"error": "goto_api", "message": str(err), "gotoStatus": err.status}
         else:
@@ -266,7 +277,11 @@ class CallWatcher:
             return 0
 
         now = self._now()
-        if self._refused_at is not None and now - self._refused_at < REFUSED_BACKOFF_MS:
+        if (
+            self._refused_at is not None
+            and 0 <= now - self._refused_at < REFUSED_BACKOFF_MS
+            and json_equal(await self._store.get(self._tenant, TOKENS_KEY), self._refused_login)
+        ):
             return 0
         cursor = _ms(await self._store.get(self._tenant, CURSOR_KEY))
         if math.isnan(cursor):
@@ -310,7 +325,12 @@ class CallWatcher:
             caller = _dict(summary.get("caller"))
             kind = _dict(caller.get("type"))
             raw: Any = summary
-            ours = summary.get("direction") == "INBOUND" and kind.get("value") == "PHONE_NUMBER"
+            # An outside call in is PHONE_NUMBER. A summary that does not say what the caller is
+            # at all (an older shape) is settled by the full report; LINE and the rest are not ours.
+            ours = summary.get("direction") == "INBOUND" and kind.get("value") in (
+                "PHONE_NUMBER",
+                None,
+            )
             if ours and _str(kind.get("number")):
                 ours = _number(kind.get("number")) == owner
             elif ours:
@@ -327,11 +347,11 @@ class CallWatcher:
             from_ = _number(caller.get("number")) if ours else ""
             if ours and not math.isnan(since) and at < since:
                 ours = False  # it started before watching was switched on
-            if (
-                ours
-                and from_
-                and any(c == from_ and abs(at - t) < DOUBLE_RING_MS for _, c, t in seen)
-            ):
+            outcome = _str(summary.get("callerOutcome"))
+            # Only a real number can be "the same caller": a withheld one, or a carrier's
+            # placeholder text, is shared by everyone who hides theirs.
+            ring = f"{from_}|{outcome}" if ours and normalize_phone(from_) == from_ else ""
+            if ring and any(r == ring and abs(at - t) < DOUBLE_RING_MS for _, r, t in seen):
                 ours = False  # the same ring, reported twice
             if not ours:
                 # `caller` stays empty: only a delivered call counts for the double-ring rule.
@@ -346,7 +366,7 @@ class CallWatcher:
                 from_=from_,
                 to=owner,
                 at=created_text if not math.isnan(_ms(created_text)) else iso_ms(now),
-                outcome=_str(summary.get("callerOutcome")),
+                outcome=outcome,
                 raw=raw,
                 caller_name=_name(caller.get("name")),
                 ended_at=_str(summary.get("callEnded")) or None,
@@ -356,7 +376,7 @@ class CallWatcher:
             except Exception as err:  # noqa: BLE001 - as with texts: logged, and it stays delivered
                 self._logger.warning("goto-sms: call handler threw (%s)", error_name(err))
             # One call at a time, after its handlers: a crash here redelivers at most this one.
-            seen.append((call_id, from_, at))
+            seen.append((call_id, ring, at))
             known.add(call_id)
             await self._save_seen(seen)
             dirty = False

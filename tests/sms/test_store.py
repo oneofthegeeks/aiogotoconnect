@@ -45,10 +45,19 @@ async def test_sqlite_store_conformance(tmp_path: Path) -> None:
 
 
 async def test_sqlite_store_conformance_on_caller_connection() -> None:
-    async def make() -> GoToSmsStore:
-        return SqliteStore(sqlite3.connect(":memory:"))  # legacy implicit-transaction mode
+    # Caller-owned connections stay open after store.close(), so the test closes them; an
+    # unclosed one is collected during a later test and fails it under -W error.
+    conns: list[sqlite3.Connection] = []
 
-    await run_store_conformance(make)
+    async def make() -> GoToSmsStore:
+        conns.append(sqlite3.connect(":memory:"))  # legacy implicit-transaction mode
+        return SqliteStore(conns[-1])
+
+    try:
+        await run_store_conformance(make)
+    finally:
+        for conn in conns:
+            conn.close()
 
 
 async def test_sqlite_store_uses_wal_and_node_schema(tmp_path: Path) -> None:
@@ -64,8 +73,12 @@ async def test_sqlite_store_uses_wal_and_node_schema(tmp_path: Path) -> None:
 
 
 async def test_sqlite_store_rejects_bad_table_name() -> None:
-    with pytest.raises(ValueError, match="invalid table name"):
-        SqliteStore(sqlite3.connect(":memory:"), table="x; DROP TABLE y")
+    conn = sqlite3.connect(":memory:")
+    try:
+        with pytest.raises(ValueError, match="invalid table name"):
+            SqliteStore(conn, table="x; DROP TABLE y")
+    finally:
+        conn.close()
 
 
 async def test_sqlite_store_custom_table_and_two_processes_view(tmp_path: Path) -> None:

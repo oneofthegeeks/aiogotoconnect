@@ -22,8 +22,19 @@ REQUIRED_SCOPES: list[str] = [
     "voice-admin.v1.read",
 ]
 
+# Added to `requiredScopes` only when call watching is on (contract: "Calls").
+CALLS_SCOPE = "cr.v1.read"
+
+
+def required_scopes(options: ResolvedOptions) -> list[str]:
+    return [*REQUIRED_SCOPES, CALLS_SCOPE] if options.watch_calls else list(REQUIRED_SCOPES)
+
+
 # Store key: why moving the webhook to a newly selected account failed (`incoming.error`).
 INBOUND_ERROR = "inbound:error"
+# Store keys written by inbound/calls.py (not imported from there: this module stays light).
+CALLS_ERROR = "calls:error"
+CALLS_CURSOR = "calls:cursor"
 
 
 class IncomingError(TypedDict):
@@ -41,6 +52,16 @@ class IncomingStatus(TypedDict):
     # public_url is https.
     canWebhook: bool
     # Set when the account changed in webhook mode and moving the subscription failed.
+    error: NotRequired[IncomingError]
+
+
+class CallsStatus(TypedDict):
+    """Present only with `watch_calls=True`. `watching`: a look has run and the last one worked.
+    `error` (same shape as `incoming.error`): `calls_scope` when GoTo refuses the call reports
+    (enable cr.v1.read on the OAuth client and reconnect), `login_expired`, `goto_api`,
+    `goto_unreachable`. Cleared by the next good look."""
+
+    watching: bool
     error: NotRequired[IncomingError]
 
 
@@ -70,6 +91,7 @@ class StatusPayload(TypedDict):
     incoming: IncomingStatus
     requiredScopes: list[str]
     back: NotRequired[BackPayload]
+    calls: NotRequired[CallsStatus]
     startupError: NotRequired[str]
 
 
@@ -123,7 +145,7 @@ async def build_status(
         bare: StatusPayload = {
             "version": VERSION,
             "redirectUri": redirect_uri,
-            "requiredScopes": list(REQUIRED_SCOPES),
+            "requiredScopes": required_scopes(options),
             "configured": False,
             "connected": False,
             "loginExpired": False,
@@ -159,7 +181,7 @@ async def build_status(
     s: StatusPayload = {
         "version": VERSION,
         "redirectUri": redirect_uri,
-        "requiredScopes": list(REQUIRED_SCOPES),
+        "requiredScopes": required_scopes(options),
         "configured": configured,
         "connected": auth.connected,
         "loginExpired": auth.login_expired,
@@ -180,4 +202,11 @@ async def build_status(
         s["invalidFromNumber"] = True
     if auth.refresh_source:
         s["refreshSource"] = auth.refresh_source
+    if options.watch_calls:
+        calls_error = _as_incoming_error(await core.store.get(core.tenant, CALLS_ERROR))
+        looked = await core.store.get(core.tenant, CALLS_CURSOR) is not None
+        calls: CallsStatus = {"watching": looked and calls_error is None}
+        if calls_error:
+            calls["error"] = calls_error
+        s["calls"] = calls
     return s

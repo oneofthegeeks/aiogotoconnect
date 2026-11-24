@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from aiogotoconnect.sms.config import ConfigResolver
     from aiogotoconnect.sms.http import GoToHttp
+    from aiogotoconnect.sms.inbound.calls import CallWatcher
     from aiogotoconnect.sms.inbound.poller import Poller
     from aiogotoconnect.sms.inbound.processor import InboundProcessor
     from aiogotoconnect.sms.log import MessageLog
@@ -81,6 +82,9 @@ class ResolvedOptions:
     replies: KeywordReplies = field(default_factory=lambda: DEFAULT_REPLIES.copy())
     yes_is_opt_in: bool = True
     poll_interval_s: float = 30.0
+    # Calls to the sending number as on("call") events (needs scope cr.v1.read). Off by default.
+    watch_calls: bool = False
+    call_poll_interval_s: float = 120.0
     send_timeout_s: float = 10.0
     inbound_per_hour: int = 10
     log_retention_days: float = 90
@@ -111,6 +115,8 @@ class Core:
     poller: "Poller"
     logger: logging.Logger
     options: ResolvedOptions
+    # Set with `watch_calls=True`: polls call reports and emits on("call").
+    calls: "CallWatcher | None" = None
     # Background work started by handlers (post-204 inbound processing); close() awaits it.
     # Each task removes itself when done.
     inflight: "set[asyncio.Task[Any]]" = field(default_factory=set)

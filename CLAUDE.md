@@ -6,7 +6,7 @@ Live: v0.3.2 (2026-11-13) — `GoToApiError` carries GoTo's `error_code`/`detail
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.
 
 ## Stack
-Python >=3.12, aiohttp, audioop-lts on 3.13+, pure-asyncio SIP + RTP, pytest (pytest-asyncio, auto mode). `aiogotoconnect.sms` (0.4.0): framework-free ASGI app, optional `[sms]` extra (`cryptography>=41`), stdlib sqlite3; ruff + mypy --strict scoped to `src/aiogotoconnect/sms`; e2e uses uvicorn + pytest-playwright.
+Python >=3.12, aiohttp, audioop-lts on 3.13+, pure-asyncio SIP + RTP, pytest (pytest-asyncio, auto mode). `aiogotoconnect.sms` (0.4.0; call events 0.5.0): framework-free ASGI app, optional `[sms]` extra (`cryptography>=41`), stdlib sqlite3; ruff + mypy --strict scoped to `src/aiogotoconnect/sms`; e2e uses uvicorn + pytest-playwright.
 
 ## Local Development
 ```bash
@@ -28,7 +28,7 @@ Secrets (SIP device + OAuth client for live smoke tests): Infisical `home` proje
 ## Key Files
 `src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711/G.722 payload), `sip/g722.py` (pure-Python G.722 encoder; decoder is test-only), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
 
-`src/aiogotoconnect/sms/` (one module per goto-sms Node file): `client.py` (`create_goto_sms`, `GoToSms` lifecycle), `core.py` (resolved options, `AuthorizeRequest`), `oauth.py`, `directory.py`, `send.py`, `optouts.py`, `log.py`, `secrets.py` (AES-GCM), `inbound/` (`webhook.py`, `poller.py`, `processor.py`, `keywords.py`), `server/` (`handlers.py` framework-free, `asgi.py` adapter, `status.py`), `store/` (file, memory, sqlite, `conformance.py` shared store tests), `setup/` (vendored page + `SETUP_UI_VERSION`), `testing.py`. Also `docs/conformance.md`, `examples/fastapi-app/`, `e2e/`, `scripts/update-setup-page.sh`.
+`src/aiogotoconnect/sms/` (one module per goto-sms Node file): `client.py` (`create_goto_sms`, `GoToSms` lifecycle), `core.py` (resolved options, `AuthorizeRequest`), `oauth.py`, `directory.py`, `send.py`, `optouts.py`, `log.py`, `secrets.py` (AES-GCM), `inbound/` (`webhook.py`, `poller.py`, `processor.py`, `keywords.py`, `calls.py` = `watch_calls` / `on("call")`, Python-only so far), `server/` (`handlers.py` framework-free, `asgi.py` adapter, `status.py`), `store/` (file, memory, sqlite, `conformance.py` shared store tests), `setup/` (vendored page + `SETUP_UI_VERSION`), `testing.py`. Also `docs/conformance.md`, `examples/fastapi-app/`, `e2e/`, `scripts/update-setup-page.sh`.
 
 ## Gotchas
 - GoTo challenges with 407 (Proxy-Authenticate), not 401; 401 is handled too.
@@ -42,4 +42,5 @@ Secrets (SIP device + OAuth client for live smoke tests): Infisical `home` proje
 - TLS defaults to verified system CAs; tests inject a self-signed context via `ssl_context`.
 - SMS: `aiogotoconnect.sms` must not import `cryptography` at import time (optional extra); `create_goto_sms` checks for it. Its `GoToApiError` is not re-exported at the top level (name clash with `aiogotoconnect.GoToApiError`).
 - SMS setup page is vendored (byte-for-byte) from a goto-sms release: update with `scripts/update-setup-page.sh vX.Y.Z`, never hand-edit `sms/setup/`.
+- Calls (`inbound/calls.py`, 0.5.0): the call-reports API is partly documented; its observed shape is in that module's docstring and in `docs/superpowers/specs/2026-11-18-call-events-design.md`. A refusal (scope `cr.v1.read` missing) backs off to hourly and must never mark the login expired. Not in Node or the shared contract yet: add the `calls` status key to `contract/http.md` when Node lands.
 - `GOTO_SMS_ENV=production` refuses `log_only` at construction and `allow_unauthenticated_setup` without `authorize` (checked at `asgi_app()`). Node behaviour wins when this port and Node disagree.

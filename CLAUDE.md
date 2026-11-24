@@ -1,6 +1,6 @@
 # aiogotoconnect
 
-Live: v0.3.1 (2026-10-18) — G.722 wideband + SDP answer negotiation (0.3.0, breaking `codec=` → `codecs=`) plus call-quality polish: pre-encode during ring, 0.3 s tail silence. GoTo answers G.722 (live-proven).
+Live: v0.3.2 (2026-11-13) — `GoToApiError` carries GoTo's `error_code`/`detail`/`reference` (e.g. `403 UNAUTHORIZED - Forbidden access to phone number …`), live-verified through ha-goto 2.0.4. Voice unchanged since 0.3.1: G.722 + SDP negotiation, pre-encode during ring, 0.3 s tail silence.
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.
@@ -23,6 +23,7 @@ SMS package: unit tests in `tests/sms/` (aiohttp fake GoTo in `tests/sms/fake_go
 
 ## Deployment
 Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the `pypi` environment PAUSES for the maintainer's manual approval in the Actions UI -> PyPI trusted publishing. Main is PR-only (required checks: test 3.12 + 3.13); work lands via PRs the maintainer merges. No Docker - it's a library.
+Secrets (SIP device + OAuth client for live smoke tests): Infisical `home` project, folder `/aiogotoconnect` (prod); pulled ad hoc, nothing is rendered.
 
 ## Key Files
 `src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711/G.722 payload), `sip/g722.py` (pure-Python G.722 encoder; decoder is test-only), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
@@ -35,6 +36,7 @@ Tag `vX.Y.Z` (admin-only via tag ruleset) -> GitHub Actions `publish.yml` -> the
 - REGISTER and INVITE use distinct Call-IDs; the digest nonce is bound per method.
 - `call_and_play(codecs=("g722", "pcma"))` is the default offer (one m= line, plus telephone-event/101); PCMU is opt-in via `codecs=("pcmu",)`. The preferred codec is pre-encoded while ringing (re-encoded only if the answer differs), and 0.3 s of trailing silence keeps the BYE from clipping the last word.
 - G.722 rtpmap is `G722/8000` (RFC 3551 quirk: RTP clock is 8 kHz though sampling is 16 kHz), so `sip/rtp.py` is unchanged: 160 bytes / 160 ticks per 20 ms frame.
+- `publish.yml` runs `pytest -W error` (CI does not): any new startup warning blocks a release. `asyncio_default_fixture_loop_scope` is set for that reason (v0.3.2's first publish died on it).
 - `audioop` deprecation warning is suppressed at import on 3.12 (audioop-lts on 3.13+).
 - REGISTER happens per call (no persistent registration).
 - TLS defaults to verified system CAs; tests inject a self-signed context via `ssl_context`.

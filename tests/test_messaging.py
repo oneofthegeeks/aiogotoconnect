@@ -84,6 +84,58 @@ async def test_other_error_status_raises_gotoapierror_with_status(aiohttp_server
         await client.async_send_sms(OWNER, CONTACTS, "hello")
 
     assert caught.value.status == status
+    assert caught.value.error_code is None  # body had no GoTo error fields
+    assert str(caught.value) == f"SMS send failed with HTTP {status}"
+
+
+async def test_goto_error_body_is_surfaced(aiohttp_server):
+    # The exact body GoTo returned on 2026-11-13 when the user lost SMS rights on the number.
+    goto_body = {
+        "reference": "rOlcqAqhwEnlX4js4Y0s4yg8VdRVkByt",
+        "errorCode": "UNAUTHORIZED",
+        "message": "Forbidden access to phone number +15550001111",
+    }
+    server = await aiohttp_server(sms_app([], status=403, payload=goto_body))
+    client = GoToMessaging(static_token, base_url=str(server.make_url("")).rstrip("/"))
+
+    with pytest.raises(GoToApiError) as caught:
+        await client.async_send_sms(OWNER, CONTACTS, "hello")
+
+    err = caught.value
+    assert err.status == 403
+    assert err.error_code == "UNAUTHORIZED"
+    assert err.detail == "Forbidden access to phone number +15550001111"
+    assert err.reference == "rOlcqAqhwEnlX4js4Y0s4yg8VdRVkByt"
+    assert str(err) == (
+        "SMS send failed with HTTP 403: UNAUTHORIZED - Forbidden access to phone number +15550001111"
+    )
+
+
+async def test_non_json_error_body_falls_back_to_status_only(aiohttp_server):
+    async def html_handler(request: web.Request) -> web.Response:
+        return web.Response(text="<html>Bad Gateway</html>", status=502, content_type="text/html")
+
+    app = web.Application()
+    app.router.add_post("/messaging/v1/messages", html_handler)
+    server = await aiohttp_server(app)
+    client = GoToMessaging(static_token, base_url=str(server.make_url("")).rstrip("/"))
+
+    with pytest.raises(GoToApiError) as caught:
+        await client.async_send_sms(OWNER, CONTACTS, "hello")
+
+    assert caught.value.status == 502
+    assert caught.value.detail is None
+    assert str(caught.value) == "SMS send failed with HTTP 502"
+
+
+async def test_long_goto_detail_is_capped(aiohttp_server):
+    server = await aiohttp_server(sms_app([], status=400, payload={"message": "x" * 5000}))
+    client = GoToMessaging(static_token, base_url=str(server.make_url("")).rstrip("/"))
+
+    with pytest.raises(GoToApiError) as caught:
+        await client.async_send_sms(OWNER, CONTACTS, "hello")
+
+    assert len(caught.value.detail) == 200
 
 
 async def test_connection_dropped_raises_gotoerror(aiohttp_server):

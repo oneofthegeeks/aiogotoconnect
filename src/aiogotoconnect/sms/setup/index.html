@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- No favicon request: it would go to the host's root, outside the mount. -->
+    <link rel="icon" href="data:," />
+    <title>GoTo SMS setup</title>
+    <!-- Theme before the CSS paints, so there is no flash: dark unless the user chose light. -->
+    <script>
+      (function () {
+        var theme = 'dark';
+        try {
+          if (localStorage.getItem('goto-sms-theme') === 'light') theme = 'light';
+        } catch (e) {}
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <style>:root{color-scheme:light;--bg: #f2f5f4;--surface: #ffffff;--sunken: #f6f8f7;--ink: #1a2422;--muted: #586561;--line: #d5dddb;--accent: #0f6b5c;--accent-ink: #ffffff;--accent-soft: #d6ebe6;--ok: #17663a;--ok-bg: #e5f3ea;--warn: #7f5300;--warn-bg: #fdf3dc;--bad: #a8261e;--bad-bg: #fbe9e7;--code-bg: #e9eeec;--radius: 14px}:root[data-theme=dark]{color-scheme:dark;--bg: #111317;--surface: #1b1e24;--sunken: #16191e;--ink: #e6e8eb;--muted: #a1a8b3;--line: #2e333b;--accent: #5cc4ad;--accent-ink: #062520;--accent-soft: #173a33;--ok: #82d6a2;--ok-bg: #14301f;--warn: #efc56a;--warn-bg: #2f2711;--bad: #f3a59d;--bad-bg: #371714;--code-bg: #262b33}*,*:before,*:after{box-sizing:border-box}body{margin:0;padding:0 16px;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}h1,h2,h3{line-height:1.2;margin:0;letter-spacing:-.01em}h1{font-size:1.75rem;font-weight:650}h2{font-size:1.35rem;font-weight:650}h3{font-size:1rem;font-weight:650}p{margin:0}a{color:var(--accent)}h2[tabindex="-1"]:focus{outline:none}code{background:var(--code-bg);border-radius:5px;padding:.12em .4em;font-size:.88em}.wrap,.msg,.alert,.rail-sub,dd,td.reason{overflow-wrap:anywhere}td{overflow-wrap:break-word}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:.5rem 0 0;font-size:.85em}.top,.page,.foot{max-width:1500px;margin-left:auto;margin-right:auto}.top{padding:2rem 0 1.75rem}.topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem 1rem;margin-bottom:1rem}.back{font-weight:600;text-decoration:none}.back:hover{text-decoration:underline}.lede{color:var(--muted);margin-top:.35rem}.muted{color:var(--muted)}.fine{color:var(--muted);font-size:.88rem}.hint{color:var(--muted);font-size:.9rem}.alert{border-radius:10px;padding:.75rem 1rem;display:grid;gap:.4rem}.alert[hidden]{display:none}.alert ul{margin:0;padding-left:1.25rem}.alert.bad{background:var(--bad-bg);color:var(--bad)}.alert.warn{background:var(--warn-bg);color:var(--warn)}.alert.ok{background:var(--ok-bg);color:var(--ok);font-weight:600}#startup-error{margin-bottom:1.5rem}.setup{display:grid;grid-template-columns:minmax(17rem,22rem) minmax(0,1fr);gap:2.5rem;align-items:start}.setup[hidden],.progress{display:none}.rail{position:sticky;top:1.5rem}.rail-title{font-size:.9rem;color:var(--muted);font-weight:600;margin-bottom:.75rem}.rail ol{list-style:none;margin:0;padding:0}.rail-item{position:relative;display:grid;grid-template-columns:2.1rem minmax(0,1fr) auto;gap:.85rem;align-items:start;padding-bottom:1.6rem}.rail-item:before{content:"";position:absolute;left:calc(1.05rem - 1px);top:2.3rem;bottom:.2rem;width:2px;border-radius:1px;background:var(--line)}.rail-item:last-child{padding-bottom:0}.rail-item:last-child:before{display:none}.rail-item.done:before{background:var(--accent)}.marker{width:2.1rem;height:2.1rem;border-radius:50%;display:grid;place-items:center;font-weight:650;font-size:.9rem;border:2px solid var(--line);background:var(--bg);color:var(--muted)}.done .marker{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}.current .marker{border-color:var(--accent);color:var(--accent);background:var(--surface);box-shadow:0 0 0 5px var(--accent-soft)}.rail-text{display:grid;gap:.1rem;padding-top:.3rem;min-width:0}.rail-name{font-weight:600;color:var(--muted)}.current .rail-name,.done .rail-name{color:var(--ink)}.rail-sub{font-size:.86rem;color:var(--muted)}.blocked{opacity:.6}.change{padding-top:.35rem;font-size:.88rem}.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:2.25rem 2.5rem 2.5rem;min-width:0}.to-summary{margin-bottom:1.25rem}.step{display:grid;gap:1.5rem}.step[hidden]{display:none}.intro{color:var(--muted);max-width:62ch;margin-top:-.75rem}.cols{display:grid;gap:2rem}@media(min-width:1240px){.cols{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:3rem;align-items:start}}.howto{margin:0;padding:0;list-style:none;counter-reset:howto;display:grid;gap:1.25rem}.howto>li{counter-increment:howto;position:relative;padding-left:2.35rem;display:grid;gap:.6rem;justify-items:start}.howto>li:before{content:counter(howto);position:absolute;left:0;top:.05rem;width:1.6rem;height:1.6rem;border-radius:50%;background:var(--code-bg);color:var(--muted);font-size:.82rem;font-weight:650;display:grid;place-items:center}.howto>li>*{max-width:100%}.copy-field{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}.copy-field[hidden]{display:none}.copy-field code{padding:.4em .6em}.scopes{list-style:none;margin:0;padding:0;display:grid;gap:.4rem}.scopes li{display:flex;align-items:center;gap:.5rem}.scopes code{min-width:0;overflow-wrap:break-word}.scopes button{flex:none}.paste{background:var(--sunken);border:1px solid var(--line);border-radius:12px;padding:1.5rem}.form{display:grid;gap:1.1rem}.form.narrow{max-width:34rem}.field{display:grid;gap:.35rem}.field[hidden]{display:none}label{font-weight:600}input:not([type=radio]),select{width:100%;min-width:0;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.6rem .75rem}input:not([type=radio]):focus,select:focus{border-color:var(--accent)}.locked{color:var(--ok);font-weight:600;overflow-wrap:anywhere}.locked[hidden],[hidden]{display:none!important}.actions{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem 1rem}button{font:inherit;font-weight:600;border-radius:9px;padding:.6rem 1.15rem;cursor:pointer;border:1px solid transparent}button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}button.ghost{background:transparent;border-color:var(--line);color:var(--ink)}button.ghost:hover{border-color:var(--accent)}button.theme-toggle{margin-left:auto;padding:.3rem .75rem;font-size:.86rem;border-radius:999px}button.small{padding:.25rem .7rem;font-size:.86rem;border-radius:7px}button.linkish{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;text-underline-offset:3px;justify-self:start}button:disabled{opacity:.55;cursor:not-allowed}:focus-visible{outline:3px solid var(--accent);outline-offset:2px}.msg{padding:.65rem .9rem;border-radius:9px}.msg.ok{background:var(--ok-bg);color:var(--ok)}.msg.bad{background:var(--bad-bg);color:var(--bad)}.choices{border:0;margin:0;padding:0;display:grid;gap:.75rem}@media(min-width:1240px){.choices{grid-template-columns:repeat(3,minmax(0,1fr))}}.choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.75rem;align-items:start;font-weight:400;border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;cursor:pointer;background:var(--surface)}.choice:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);background:var(--sunken)}.choice:has(input:disabled){cursor:not-allowed;color:var(--muted)}.choice input{margin:.3rem 0 0;accent-color:var(--accent);width:1.05rem;height:1.05rem}.choice-body{display:grid;gap:.3rem}.choice-title{font-weight:650}.choice-text{color:var(--muted);font-size:.92rem}.choice-reason{color:var(--warn);font-size:.88rem;font-weight:600}.manage{display:grid;gap:1.5rem}.manage-top{display:grid;gap:1.5rem;grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}.summary,.quick,.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:1.75rem 2rem;min-width:0}.summary{border-top:4px solid var(--accent)}.summary h2{font-size:1.6rem;display:flex;align-items:center;gap:.6rem}.tick{width:2rem;height:2rem;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:inline-grid;place-items:center;font-size:1rem}.ready-line{margin-top:.5rem;font-size:1.05rem}.rows{margin:1.5rem 0 0;display:grid}.row{display:grid;grid-template-columns:minmax(8rem,12rem) minmax(0,1fr);gap:1rem;padding:.8rem 0;border-top:1px solid var(--line);align-items:baseline}.row dt{color:var(--muted);font-weight:600}.row dd{margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:1rem;min-width:0}.row dd>span{min-width:0}.row .change{flex:none;white-space:nowrap}.quick{display:grid;gap:1rem;align-content:start}.lists{display:grid;gap:1.5rem;grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:start}.list{display:grid;gap:.9rem}.row-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem}.inline{margin-top:.5rem}table{width:100%;border-collapse:collapse;font-size:.9em}th,td{text-align:left;padding:.5rem;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}@media(max-width:1100px){.manage-top,.lists{grid-template-columns:minmax(0,1fr)}}@media(max-width:860px){.setup{grid-template-columns:minmax(0,1fr);gap:1.25rem}.progress{display:grid;gap:.5rem;font-weight:600;color:var(--muted);font-size:.92rem}.bar{display:block;height:4px;border-radius:2px;background:var(--line);overflow:hidden}#progress-fill{display:block;height:100%;background:var(--accent);transition:width .25s ease}.panel{order:1;padding:1.5rem 1.25rem 1.75rem}.progress{order:0}.rail{order:2;position:static;padding:.5rem .25rem 0}.rail-item{padding-bottom:1.1rem}}@media(max-width:640px){.top{padding:1.25rem 0}h1{font-size:1.45rem}.summary,.quick,.list{padding:1.25rem}.paste{padding:1.1rem}.row{grid-template-columns:minmax(0,1fr);gap:.15rem}table.stack thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}table.stack,table.stack tbody,table.stack tr,table.stack td{display:block}table.stack tr{border:1px solid var(--line);border-radius:10px;padding:.5rem .7rem;margin-bottom:.5rem}table.stack td{border:0;padding:.15rem 0;display:grid;grid-template-columns:6rem minmax(0,1fr);gap:.5rem}table.stack td:before{content:attr(data-label);color:var(--muted);font-weight:600}}@media(prefers-reduced-motion:reduce){#progress-fill{transition:none}}.foot{padding:2.5rem 0 2rem;color:var(--muted);font-size:.85em;text-align:center}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+</style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="topbar">
+        <a id="back" class="back" hidden></a>
+        <button id="theme-toggle" type="button" class="ghost theme-toggle"></button>
+      </div>
+      <h1>GoTo SMS setup</h1>
+      <p class="lede">Connect this app to GoTo Connect so it can send and receive texts.</p>
+    </header>
+
+    <!-- Progress and results are announced here for screen readers. -->
+    <div id="live" class="sr-only" aria-live="polite" role="status"></div>
+
+    <main class="page">
+      <div id="startup-error" class="alert bad" role="alert" hidden>
+        <p><strong>The texting connection couldn't start.</strong></p>
+        <p id="startup-text"></p>
+      </div>
+      <p id="loading" class="muted">Loading…</p>
+
+      <!-- Setup mode: one step open at a time. -->
+      <div id="setup" class="setup" hidden>
+        <p class="progress" aria-hidden="true">
+          <span id="progress-text">Step 1 of 5</span>
+          <span class="bar"><span id="progress-fill"></span></span>
+        </p>
+
+        <nav class="rail" aria-labelledby="rail-title">
+          <h2 id="rail-title" class="rail-title">All steps</h2>
+          <ol id="rail"></ol>
+        </nav>
+
+        <div class="panel">
+          <button id="to-summary" type="button" class="linkish to-summary" hidden>
+            ← Back to summary
+          </button>
+
+          <!-- 1. Credentials -->
+          <section class="step" id="step-1" aria-labelledby="h-1" hidden>
+            <h2 id="h-1" tabindex="-1">Create your GoTo app</h2>
+            <p class="intro">
+              GoTo needs to know about this app before it can sign you in. Create an OAuth client in
+              GoTo's developer portal, then paste its ID and secret here.
+            </p>
+            <div class="cols">
+              <ol class="howto">
+                <li>
+                  <p>
+                    Sign in at
+                    <a href="https://developer.goto.com" target="_blank" rel="noopener noreferrer"
+                      >developer.goto.com</a
+                    >, open <strong>OAuth Clients</strong> and create a new client.
+                  </p>
+                </li>
+                <li id="redirect-item">
+                  <p>Add this redirect URI to the client:</p>
+                  <div class="copy-field">
+                    <code id="redirect-uri" class="wrap"></code>
+                    <button id="copy-redirect" type="button" class="ghost small">Copy</button>
+                  </div>
+                  <p id="no-redirect" class="alert warn" hidden>
+                    This app has no public URL yet, so there is no redirect URI. Set
+                    <code>publicUrl</code> (or <code>GOTO_SMS_PUBLIC_URL</code>) and restart the
+                    app.
+                  </p>
+                </li>
+                <li id="scopes-item">
+                  <p>Turn on these scopes:</p>
+                  <ul id="scopes" class="scopes"></ul>
+                  <button id="copy-scopes" type="button" class="ghost small">
+                    Copy all scopes
+                  </button>
+                </li>
+                <li>
+                  <p>
+                    Save the client. <strong>GoTo shows the client secret only once</strong>, so
+                    copy it before you leave that page.
+                  </p>
+                </li>
+              </ol>
+
+              <form id="cred-form" class="form paste" novalidate>
+                <h3>Paste from GoTo</h3>
+                <p id="cred-problem" class="alert bad" hidden></p>
+                <div class="field">
+                  <label for="client-id">Client ID</label>
+                  <input id="client-id" name="clientId" autocomplete="off" spellcheck="false" />
+                  <p id="client-id-locked" class="locked" hidden>✓ set by your app's config</p>
+                </div>
+                <div class="field">
+                  <label for="client-secret">Client secret</label>
+                  <input
+                    id="client-secret"
+                    name="clientSecret"
+                    type="password"
+                    autocomplete="new-password"
+                    spellcheck="false"
+                  />
+                  <p id="client-secret-locked" class="locked" hidden>✓ set by your app's config</p>
+                </div>
+                <div class="actions">
+                  <button id="save-cred" type="submit" class="primary">Save and continue</button>
+                </div>
+                <p id="cred-msg" class="msg" hidden></p>
+              </form>
+            </div>
+          </section>
+
+          <!-- 2. Sign in -->
+          <section class="step" id="step-2" aria-labelledby="h-2" hidden>
+            <h2 id="h-2" tabindex="-1">Sign in to GoTo</h2>
+            <p class="intro">
+              Sign in with the GoTo account that owns the phone numbers you want to text from. If
+              you want replies delivered by webhook later, that account must be a Super Admin.
+            </p>
+            <p id="login-problem" class="alert bad" hidden></p>
+            <div id="goto-login-error" class="alert bad" hidden>
+              <p>
+                <strong>GoTo couldn't sign you in.</strong> This almost always means one of two
+                things:
+              </p>
+              <ul>
+                <li>the redirect URI isn't registered on your GoTo client exactly as shown, or</li>
+                <li>one of the required scopes isn't turned on for the client.</li>
+              </ul>
+              <button id="to-step-1" type="button" class="linkish">
+                Check the redirect URI and scopes in step 1
+              </button>
+            </div>
+            <p id="connected-note" class="alert ok" hidden>✓ Connected to GoTo.</p>
+            <div class="actions">
+              <button id="connect" type="button" class="primary">Connect to GoTo</button>
+              <button id="disconnect" type="button" class="ghost" hidden>Disconnect</button>
+            </div>
+            <p id="connect-msg" class="msg" hidden></p>
+            <p id="connect-fine" class="fine">
+              You'll leave this page to sign in, then come straight back.
+            </p>
+          </section>
+
+          <!-- 3. Sending number -->
+          <section class="step" id="step-3" aria-labelledby="h-3" hidden>
+            <h2 id="h-3" tabindex="-1">Choose the sending number</h2>
+            <p class="intro">Texts from this app come from the number you pick here.</p>
+            <form id="number-form" class="form narrow" novalidate>
+              <p id="number-loading" class="muted" hidden>Loading your GoTo numbers…</p>
+              <div class="field" id="account-field">
+                <label for="account">GoTo account</label>
+                <select id="account" name="accountKey"></select>
+                <p id="account-locked" class="locked" hidden>✓ set by your app's config</p>
+              </div>
+              <div class="field" id="number-field">
+                <label for="number">Phone number</label>
+                <select id="number" name="fromNumber"></select>
+              </div>
+              <div class="field" id="typed-field" hidden>
+                <label for="typed-number">Phone number</label>
+                <input
+                  id="typed-number"
+                  type="tel"
+                  autocomplete="off"
+                  placeholder="+1 801 555 0100"
+                />
+                <p class="hint">GoTo didn't list the numbers, so type the one to send from.</p>
+              </div>
+              <p id="number-locked" class="locked" hidden>✓ Number set by your app's config</p>
+              <p id="sms-hint" class="hint" hidden></p>
+              <p id="number-problem" class="alert bad" hidden>
+                The sending number in your app's config isn't a valid phone number. Fix it there and
+                restart the app.
+              </p>
+              <div class="actions">
+                <button id="save-number" type="submit" class="primary">Save and continue</button>
+              </div>
+              <p id="number-msg" class="msg" hidden></p>
+            </form>
+          </section>
+
+          <!-- 4. Test -->
+          <section class="step" id="step-4" aria-labelledby="h-4" hidden>
+            <h2 id="h-4" tabindex="-1">Send a test text</h2>
+            <p class="intro">
+              A real text is the only sure check that this number can send. It says “Test message
+              from goto-sms”.
+            </p>
+            <form id="test-form" class="form narrow" novalidate>
+              <div class="field">
+                <label for="test-to">Your mobile number</label>
+                <input id="test-to" type="tel" autocomplete="tel" placeholder="(801) 555-0100" />
+              </div>
+              <div class="actions">
+                <button id="send-test" type="submit" class="primary">Send test text</button>
+              </div>
+              <p id="test-msg" class="msg" hidden></p>
+            </form>
+            <div class="actions after">
+              <button id="test-continue" type="button" class="primary" hidden>Continue</button>
+              <button id="test-skip" type="button" class="linkish">Skip for now</button>
+            </div>
+          </section>
+
+          <!-- 5. Incoming -->
+          <section class="step" id="step-5" aria-labelledby="h-5" hidden>
+            <h2 id="h-5" tabindex="-1">Incoming texts</h2>
+            <p class="intro">
+              Optional. Choose how replies reach this app. STOP, START and HELP replies are handled
+              for you whenever replies are on.
+            </p>
+            <fieldset class="choices">
+              <legend class="sr-only">How replies reach this app</legend>
+              <label class="choice">
+                <input type="radio" name="incoming" value="off" />
+                <span class="choice-body">
+                  <span class="choice-title">Off</span>
+                  <span class="choice-text">Send only. Replies stay in GoTo.</span>
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="incoming" value="polling" />
+                <span class="choice-body">
+                  <span class="choice-title">Polling</span>
+                  <span class="choice-text"
+                    >Checks GoTo for new texts every 30 seconds. Works anywhere, even on your own
+                    computer, but replies can take up to half a minute.</span
+                  >
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="incoming" value="webhook" />
+                <span class="choice-body">
+                  <span class="choice-title">Webhook</span>
+                  <span class="choice-text"
+                    >GoTo delivers each text the moment it arrives. Needs a public https address and
+                    a Super Admin GoTo login.</span
+                  >
+                  <span id="webhook-reason" class="choice-reason" hidden
+                    >Not available: this app's public URL isn't https.</span
+                  >
+                </span>
+              </label>
+            </fieldset>
+            <p id="webhook-url-row" class="fine" hidden>
+              GoTo delivers to <code id="webhook-url" class="wrap"></code>
+            </p>
+            <p id="incoming-error" class="alert bad" hidden></p>
+            <div class="actions">
+              <button id="finish" type="button" class="primary">Finish</button>
+            </div>
+            <p id="incoming-msg" class="msg" hidden></p>
+          </section>
+        </div>
+      </div>
+
+      <!-- Manage mode: everything works. -->
+      <div id="manage" class="manage" hidden>
+        <div class="manage-top">
+          <section class="summary" aria-labelledby="ready-title">
+            <h2 id="ready-title" tabindex="-1">
+              <span class="tick" aria-hidden="true">✓</span> Ready
+            </h2>
+            <p id="ready-line" class="ready-line"></p>
+            <dl id="summary-rows" class="rows"></dl>
+          </section>
+          <section class="quick" aria-labelledby="h-quick">
+            <h2 id="h-quick">Send a test text</h2>
+            <form id="m-test-form" class="form" novalidate>
+              <div class="field">
+                <label for="m-test-to">Mobile number</label>
+                <input id="m-test-to" type="tel" autocomplete="tel" placeholder="(801) 555-0100" />
+              </div>
+              <div class="actions">
+                <button id="m-send-test" type="submit" class="ghost">Send test text</button>
+              </div>
+              <p id="m-test-msg" class="msg" hidden></p>
+            </form>
+          </section>
+        </div>
+
+        <div class="lists">
+          <section class="list" aria-labelledby="h-activity">
+            <div class="row-head">
+              <h2 id="h-activity">Recent activity</h2>
+              <button id="refresh-log" type="button" class="ghost small">Refresh</button>
+            </div>
+            <table class="stack">
+              <caption class="sr-only">
+                The last 50 messages, newest first
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Time</th>
+                  <th scope="col">Direction</th>
+                  <th scope="col">From</th>
+                  <th scope="col">To</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Reason</th>
+                </tr>
+              </thead>
+              <tbody id="log-body"></tbody>
+            </table>
+            <p id="log-empty" class="muted">No messages yet.</p>
+          </section>
+
+          <section class="list" aria-labelledby="h-optouts">
+            <h2 id="h-optouts">Opted out</h2>
+            <p class="fine">These numbers won't be texted.</p>
+            <table class="stack">
+              <caption class="sr-only">
+                Numbers that won't be texted
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Number</th>
+                  <th scope="col">Since</th>
+                  <th scope="col">Source</th>
+                  <th scope="col"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="optout-body"></tbody>
+            </table>
+            <p id="optout-empty" class="muted">No opt-outs.</p>
+            <form id="optout-form" class="form inline" novalidate>
+              <div class="field">
+                <label for="optout-number">Add a number</label>
+                <input id="optout-number" type="tel" autocomplete="off" />
+              </div>
+              <div class="actions">
+                <button type="submit" class="ghost">Add opt-out</button>
+              </div>
+            </form>
+            <p id="optout-msg" class="msg" hidden></p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="foot">
+      goto-sms v<span id="version">…</span> · unofficial, not affiliated with GoTo
+    </footer>
+    <script>"use strict";(()=>{var ge=Object.defineProperty;var fe=(e,t,n)=>t in e?ge(e,t,{enumerable:!0,configurable:!0,writable:!0,value:n}):e[t]=n;var D=(e,t,n)=>fe(e,typeof t!="symbol"?t+"":t,n);var F={1:"GoTo app credentials",2:"Sign in to GoTo",3:"Sending number",4:"Test text",5:"Incoming texts"},Z={off:"Off",polling:"Polling every 30 s",webhook:"Webhook"},ee="\u2713 set by your app's config",pe="Saved. Leave blank to keep it.",P=class extends Error{constructor(n,o,i,a){super(o);D(this,"code",n);D(this,"gotoStatus",i);D(this,"gotoBody",a)}};async function u(e,t){let n=await fetch(e,t===void 0?{headers:{accept:"application/json"}}:{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify(t)}),o=await n.json().catch(()=>({}));if(!n.ok)throw new P(typeof o.error=="string"?o.error:"http_"+n.status,typeof o.message=="string"?o.message:"Request failed ("+n.status+")",typeof o.gotoStatus=="number"?o.gotoStatus:void 0,typeof o.gotoBody=="string"?o.gotoBody:void 0);return o}function r(e){let t=document.getElementById(e);if(!t)throw new Error("missing #"+e);return t}var c=e=>r(e),b=e=>r(e),S=e=>r(e),z=r("live");function C(e){z.textContent="",setTimeout(()=>z.textContent=e,50)}function g(e,t,n,o){let i=r(e);if(i.hidden=!1,i.className="msg "+t,i.textContent=n,o){let a=document.createElement("pre");a.textContent=o,i.append(a)}C(n)}function H(e){r(e).hidden=!0}function E(e,t){if(t instanceof P){let n=t.gotoStatus?t.message+". GoTo said:":t.message;g(e,"bad",n,t.gotoBody)}else g(e,"bad","Couldn't reach the server. Check your connection and try again.")}async function I(e,t){e.disabled=!0;try{await t()}finally{e.disabled=!1}}function be(e,t){e.classList.toggle("primary",t),e.classList.toggle("ghost",!t)}var h=(e,t)=>e.sources[t]==="options"||e.sources[t]==="env";function G(e){let t=/^\+1(\d{3})(\d{3})(\d{4})$/.exec(e);return t?t[1]+"-"+t[2]+"-"+t[3]:e}var he=e=>{let t=new Date(e);return Number.isNaN(t.getTime())?e:t.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})},te=e=>{let t=new Date(e);return Number.isNaN(t.getTime())?e:t.toLocaleString()},V="goto-sms:test-skipped:"+location.pathname;function ye(){try{return localStorage.getItem(V)==="1"}catch{return!1}}function ve(e){try{e?localStorage.setItem(V,"1"):localStorage.removeItem(V)}catch{}}var s,w="loading",M=1,R=!1,ne=!1,oe=!1,A,v,y=[],re;function U(e,t){switch(t){case 1:return e.configured;case 2:return e.connected;case 3:return e.ready;case 4:return A!==void 0||ne||ye();case 5:return oe||e.incoming.mode!=="off"}}var Se=e=>[1,2,3,4].every(t=>U(e,t)),_=e=>[1,2,3,4].find(t=>!U(e,t));function ke(e,t){return[1,2,3].filter(o=>o<t).find(o=>!U(e,o))}function ie(e,t){switch(t){case 1:{if(h(e,"clientId")&&h(e,"clientSecret"))return"Set by your app's config";let n=e.clientId??"";return"Client ID "+(n.length>8?n.slice(0,8)+"\u2026":n)+", secret saved"}case 2:return e.refreshSource==="seeded-from-env"?"Connected (from your app config)":"Connected";case 3:{let n=v?.find(o=>o.key===e.accountKey)?.name;return G(e.fromNumber??"")+(n?" ("+n+")":"")}case 4:return A?"Test sent "+he(A):"Skipped";case 5:return Z[e.incoming.mode]}}function K(){let e=s;if(!e)return;r("version").textContent=e.version;let t=r("back");t.hidden=!e.back,e.back&&(t.href=e.back.url,t.textContent="\u2190 Back to "+e.back.label),r("startup-error").hidden=!e.startupError,r("startup-text").textContent=e.startupError??"",r("loading").hidden=w!=="loading",r("setup").hidden=w!=="setup",r("manage").hidden=w!=="manage",w==="setup"&&Ee(e),w==="manage"&&Le(e)}function Ee(e){r("progress-text").textContent="Step "+M+" of 5 \xB7 "+F[M],r("progress-fill").style.width=M/5*100+"%",c("to-summary").hidden=!R,Ce(e);for(let t of[1,2,3,4,5])r("step-"+t).hidden=t!==M;we(e),Te(e),ce(e),xe(e),Ne(e)}function Ce(e){let t=[1,2,3,4,5].map(n=>{let o=document.createElement("li"),i=n===M,a=U(e,n)&&!i,l=ke(e,n),f=i?"current":a?"done":l?"blocked":"todo";o.className="rail-item "+f,i&&o.setAttribute("aria-current","step");let p=document.createElement("span");p.className="marker",p.setAttribute("aria-hidden","true"),p.textContent=a?"\u2713":String(n);let d=document.createElement("span");d.className="rail-text";let m=document.createElement("span");m.className="rail-name",m.textContent=F[n];let N=document.createElement("span");N.className="rail-sub",N.textContent=a?ie(e,n):f==="blocked"?"Needs step "+String(l):n===5&&!i?"Optional":"";let O=document.createElement("span");if(O.className="sr-only",O.textContent=i?" (current step)":a?" (done)":"",m.append(O),d.append(m),N.textContent&&d.append(N),o.append(p,d),a){let L=document.createElement("button");L.type="button",L.className="linkish change",L.textContent="Change",L.setAttribute("aria-label","Change "+F[n]),L.addEventListener("click",()=>k(n,{focus:!0})),o.append(L)}return o});r("rail").replaceChildren(...t)}function we(e){r("redirect-uri").textContent=e.redirectUri,r("redirect-uri").parentElement.hidden=!e.redirectUri,r("no-redirect").hidden=!!e.redirectUri,r("scopes").replaceChildren(...e.requiredScopes.map(f=>{let p=document.createElement("li"),d=document.createElement("code");f.split(".").forEach((N,O)=>{O>0&&d.append(".",document.createElement("wbr")),d.append(N)});let m=document.createElement("button");return m.type="button",m.className="ghost small",m.textContent="Copy",m.setAttribute("aria-label","Copy "+f),m.addEventListener("click",()=>X(f,f+" copied",d)),p.append(d,m),p}));let t=h(e,"clientId"),n=h(e,"clientSecret"),o=b("client-id"),i=b("client-secret");document.activeElement!==o&&(o.value=e.clientId??""),o.hidden=t,r("client-id-locked").hidden=!t,r("client-id-locked").textContent=ee+(e.clientId?": "+e.clientId:""),i.hidden=n,r("client-secret-locked").hidden=!n,i.placeholder=e.sources.clientSecret==="store"&&e.configured?pe:"";let a=e.credentialsUnreadable&&!e.configured;r("cred-problem").hidden=!a,r("cred-problem").textContent=a?"The saved client secret can't be read because the encryption key changed. Paste the secret again.":"";let l=t&&n;c("save-cred").textContent=l?"Continue":"Save and continue",c("save-cred").disabled=!!e.startupError}function Te(e){let t=e.credentialsUnreadable&&e.configured,n="";t?n="The saved GoTo login can't be read because the encryption key changed. Sign in again to replace it.":e.loginExpired&&(n="GoTo refused the saved login, so texts can\u2019t be sent. Sign in again to fix it."),r("login-problem").hidden=!n,r("login-problem").textContent=n,r("goto-login-error").hidden=re!=="goto_login"||e.connected,r("connected-note").hidden=!e.connected;let o=c("connect"),i=e.loginExpired||t;o.dataset.action=e.connected?"continue":"connect",o.textContent=e.connected?"Continue":i?"Reconnect":"Connect to GoTo",c("disconnect").hidden=!e.connected,r("connect-fine").hidden=e.connected,o.disabled=!e.configured||!!e.startupError}function ce(e){let t=h(e,"accountKey"),n=h(e,"fromNumber");S("account").disabled=t,r("account-locked").hidden=!t,r("number-field").hidden=n||!r("typed-field").hidden,r("number-locked").hidden=!n,r("number-locked").textContent=ee.replace("set","Number set")+(e.fromNumber?": "+G(e.fromNumber):""),r("number-problem").hidden=!e.invalidFromNumber,n&&(r("typed-field").hidden=!0),c("save-number").disabled=!e.connected}function xe(e){let t=r("test-msg").classList.contains("ok")&&!r("test-msg").hidden;c("test-continue").hidden=!t,be(c("send-test"),!t),c("test-skip").hidden=t,c("send-test").disabled=!e.ready}function Ne(e){for(let n of se())n.value==="webhook"&&(n.disabled=!e.incoming.canWebhook);r("webhook-reason").hidden=e.incoming.canWebhook,r("webhook-url").textContent=e.incoming.webhookUrl??"",r("webhook-url-row").hidden=!e.incoming.webhookUrl;let t=e.incoming.error;r("incoming-error").hidden=!t,r("incoming-error").textContent=t?"Incoming texts for the selected account are not set up: "+t.message+(t.gotoStatus?" (GoTo "+String(t.gotoStatus)+")":"")+". Choose Webhook and press "+(R?"Save":"Finish")+" to try again.":"",c("finish").textContent=R?"Save":"Finish"}function Le(e){let t=v?.find(o=>o.key===e.accountKey)?.name??e.accountKey;r("ready-line").textContent="Sending from "+G(e.fromNumber??"")+(t?" ("+t+")":"")+" \xB7 Incoming: "+Z[e.incoming.mode];let n=[[1,"Credentials"],[2,"GoTo login"],[3,"Sending number"],[5,"Incoming texts"]];r("summary-rows").replaceChildren(...n.map(([o,i])=>{let a=document.createElement("div");a.className="row";let l=document.createElement("dt");l.textContent=i;let f=document.createElement("dd"),p=document.createElement("span");p.textContent=ie(e,o);let d=document.createElement("button");return d.type="button",d.className="linkish change",d.textContent="Change",d.setAttribute("aria-label","Change "+i.toLowerCase()),d.addEventListener("click",()=>{R=!0,k(o,{focus:!0})}),f.append(p,d),a.append(l,f),a}))}var se=()=>document.querySelectorAll('input[name="incoming"]');function k(e,t={}){if(w="setup",M=e,e===5&&s)for(let n of se())n.checked=n.value===s.incoming.mode;K(),e===3&&ae(),t.focus&&(r("h-"+e).focus(),C("Step "+e+" of 5: "+F[e]))}function Y(e={}){w="manage",R=!1,K(),j().catch(()=>{}),Ie().catch(()=>{}),!v&&s?.connected&&ae(),e.focus&&(r("ready-title").focus(),C("Setup complete. Ready to send texts."))}function x(e){let t=s;if(!t)return;let n=_(t);n?k(n,{focus:!0}):!R&&e<5&&!U(t,5)?k(5,{focus:!0}):Y({focus:!0})}function q(e){s=e,K()}function T(e,t){let n=document.createElement("option");return n.value=e,n.textContent=t,n}function $(e){r("typed-field").hidden=!e,r("number-field").hidden=e,e&&s?.fromNumber&&(b("typed-number").value=s.fromNumber)}function J(){let e=r("sms-hint"),t=y.find(n=>n.number===S("number").value);e.hidden=!t||!r("typed-field").hidden,t&&(e.textContent=t.smsEnabled===!1?"GoTo says this number is not enabled for SMS. Turn on SMS for it in GoTo Admin first.":t.smsEnabled===!0?"SMS is turned on for this number.":"GoTo didn't say whether this number can text. The test in the next step will tell.")}var W;function ae(){let e=s;return e?.connected?(W??(W=(async()=>{H("number-msg"),r("number-loading").hidden=!1;try{v=(await u("api/accounts")).accounts}catch(n){E("number-msg",n),$(!0);return}finally{r("number-loading").hidden=!0}let t=S("account");t.replaceChildren(T("","Choose an account"),...v.map(n=>T(n.key,n.name||n.key))),e.accountKey?(v.some(n=>n.key===e.accountKey)||t.append(T(e.accountKey,e.accountKey)),t.value=e.accountKey):v.length===1&&v[0]&&(t.value=v[0].key),K(),await de(t.value)})().finally(()=>{W=void 0})),W):Promise.resolve()}async function de(e){let t=S("number");if(y=[],!e){t.replaceChildren(T("","Choose an account first")),J();return}t.replaceChildren(T("","Loading numbers\u2026"));try{y=(await u("api/numbers?accountKey="+encodeURIComponent(e))).numbers}catch(o){E("number-msg",o),$(!0);return}$(!1),t.replaceChildren(T("",y.length?"Choose a number":"This account has no numbers"),...y.map(o=>T(o.number,G(o.number)+(o.name?" ("+o.name+")":"")+(o.smsEnabled===!1?", no SMS":""))));let n=s?.fromNumber;n&&y.some(o=>o.number===n)?t.value=n:y.length===1&&y[0]&&(t.value=y[0].number),s&&ce(s),J()}async function j(){let{entries:e}=await u("api/log?limit=50");A??(A=e.find(t=>t.direction==="outbound"&&t.status==="sent")?.at),r("log-body").replaceChildren(...e.map(t=>ue([["Time",te(t.at)],["Direction",t.direction],["From",t.from],["To",t.to],["Status",t.status],["Reason",t.reason??""]]))),r("log-empty").hidden=e.length>0,r("log-body").closest("table").hidden=e.length===0}function ue(e){let t=document.createElement("tr");for(let[n,o]of e){let i=document.createElement("td");i.dataset.label=n,n==="Reason"&&(i.className="reason"),typeof o=="string"?i.textContent=o:i.append(o),t.append(i)}return t}function le(e){r("optout-body").replaceChildren(...e.map(t=>{let n=document.createElement("button");return n.type="button",n.className="ghost small",n.textContent="Remove",n.setAttribute("aria-label","Remove opt-out for "+t.number),n.addEventListener("click",()=>{me(n,t.number,"remove")}),ue([["Number",t.number],["Since",te(t.at)],["Source",t.source],["",n]])})),r("optout-empty").hidden=e.length>0,r("optout-body").closest("table").hidden=e.length===0}async function Ie(){le((await u("api/opt-outs")).optOuts)}async function me(e,t,n){await I(e,async()=>{try{let{optOuts:o}=await u("api/opt-outs",{number:t,action:n});le(o),g("optout-msg","ok",n==="add"?t+" will not be texted.":t+" can be texted again."),n==="add"&&(b("optout-number").value="")}catch(o){E("optout-msg",o)}})}function X(e,t,n){let o=()=>{let i=document.createRange();i.selectNodeContents(n),getSelection()?.removeAllRanges(),getSelection()?.addRange(i),C("Couldn't copy automatically; the text is selected, copy it by hand")};if(!navigator.clipboard)return o();navigator.clipboard.writeText(e).then(()=>C(t),o)}async function Me(){let e=s;if(!e)return;let t=h(e,"clientId"),n=h(e,"clientSecret");if(t&&n)return x(1);let o={},i=b("client-id").value.trim(),a=b("client-secret").value.trim();if(!t){if(!i)return g("cred-msg","bad","Paste the client ID from GoTo.");o.clientId=i}if(!n){let l=e.sources.clientSecret==="store"&&e.configured;if(!a&&!l)return g("cred-msg","bad","Paste the client secret from GoTo.");a&&(o.clientSecret=a)}try{q(await u("api/credentials",o)),b("client-secret").value="",H("cred-msg"),s?.configured&&x(1)}catch(l){E("cred-msg",l)}}async function Re(){try{let{url:e}=await u("api/connect",{});location.href=e}catch(e){E("connect-msg",e)}}async function Oe(){let e=s;if(!e)return;let t={};if(!h(e,"accountKey")){let n=S("account").value;n&&(t.accountKey=n)}if(!h(e,"fromNumber")){let o=!r("typed-field").hidden?b("typed-number").value.trim():S("number").value;if(!o)return g("number-msg","bad","Choose the number to send from.");t.fromNumber=o}try{q(await u("api/selection",t)),H("number-msg"),s?.ready&&x(3)}catch(n){E("number-msg",n)}}var Pe={sent:"Sent",opted_out:"Not sent: that number opted out",invalid_number:"Not sent: that isn\u2019t a valid phone number",uncertain:"Unclear whether it was sent",not_connected:"Not sent: not connected to GoTo",rejected:"GoTo refused the text"};async function Q(e,t){let n=b(e).value.trim();if(!n)return g(t,"bad","Enter the mobile number to text."),!1;try{let o=await u("api/test",{to:n}),i=(Pe[o.status]??o.status)+(o.to?" to "+G(o.to):"");return g(t,o.status==="sent"?"ok":"bad",o.reason?i+": "+o.reason:i+"."),o.status==="sent"&&(A=new Date().toISOString()),j().catch(()=>{}),o.status==="sent"}catch(o){return E(t,o),!1}}async function Ae(){let e=s;if(!e)return;let n=document.querySelector('input[name="incoming"]:checked')?.value??e.incoming.mode;if(n!==e.incoming.mode||e.incoming.error)try{q(await u("api/incoming",{mode:n}))}catch(o){E("incoming-msg",o);return}H("incoming-msg"),oe=!0,x(5)}function He(){let e=new URLSearchParams(location.search),t=e.get("error");if((e.has("connected")||t)&&history.replaceState(null,"",location.pathname),e.get("connected")==="1")return"connected";if(t)return re=t,t==="bad_state"?g("connect-msg","bad","That sign-in link expired or was already used. Connect again."):t!=="goto_login"&&g("connect-msg","bad","Signing in failed ("+t+"). Try again."),"error"}function B(e,t){r(e).addEventListener("submit",n=>{n.preventDefault();let o=n.target.querySelector("button[type=submit]");o&&I(o,t)})}function Ge(){B("cred-form",Me),c("copy-redirect").addEventListener("click",()=>X(s?.redirectUri??"","Redirect URI copied",r("redirect-uri"))),c("copy-scopes").addEventListener("click",()=>X((s?.requiredScopes??[]).join(" "),"All scopes copied",r("scopes"))),c("connect").addEventListener("click",()=>{let e=c("connect");e.dataset.action==="continue"?x(2):I(e,Re)}),c("disconnect").addEventListener("click",()=>{I(c("disconnect"),async()=>{try{q(await u("api/disconnect",{})),g("connect-msg","ok","Disconnected from GoTo.")}catch(e){E("connect-msg",e)}})}),c("to-step-1").addEventListener("click",()=>{k(1),r("redirect-item").scrollIntoView({block:"center"}),c("copy-redirect").focus()}),c("to-summary").addEventListener("click",()=>{let e=s&&_(s);e?k(e,{focus:!0}):Y({focus:!0})}),S("account").addEventListener("change",()=>{H("number-msg"),de(S("account").value)}),S("number").addEventListener("change",J),B("number-form",Oe),B("test-form",async()=>{await Q("test-to","test-msg"),s&&K()}),c("test-continue").addEventListener("click",()=>x(4)),c("test-skip").addEventListener("click",()=>{ne=!0,ve(!0),x(4)}),c("finish").addEventListener("click",()=>{I(c("finish"),Ae)}),B("m-test-form",async()=>{await Q("m-test-to","m-test-msg")}),c("refresh-log").addEventListener("click",()=>{I(c("refresh-log"),()=>j().catch(()=>C("Could not load messages")))}),r("optout-form").addEventListener("submit",e=>{e.preventDefault();let t=b("optout-number").value.trim(),n=e.target.querySelector("button");t&&me(n,t,"add")})}async function Ue(){Ge();let e=He(),t;try{t=await u("api/status")}catch(n){r("loading").textContent="Couldn't load the setup status: "+(n instanceof P?n.message:"the server did not answer."),r("loading").className="alert bad",C("Could not load status");return}s=t,!t.startupError&&t.connected&&await j().catch(()=>{}),e==="connected"&&t.connected?(C("Connected to GoTo"),k(_(t)===1?1:3,{focus:!0})):e==="error"?k(t.configured?2:1,{focus:!0}):!t.startupError&&Se(t)?Y():k(_(t)??1)}function Ke(){let e=r("theme-toggle"),t=()=>{let n=document.documentElement.dataset.theme!=="light";e.textContent=n?"Light mode":"Dark mode",e.setAttribute("aria-label",n?"Switch to light mode":"Switch to dark mode")};e.addEventListener("click",()=>{let n=document.documentElement.dataset.theme==="light"?"dark":"light";document.documentElement.dataset.theme=n;try{localStorage.setItem("goto-sms-theme",n)}catch{}t()}),t()}Ke();Ue();})();
+</script>
+  </body>
+</html>

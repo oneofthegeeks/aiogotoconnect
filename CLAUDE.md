@@ -1,6 +1,6 @@
 # aiogotoconnect
 
-Live: v0.3.2 (2026-11-13) — `GoToApiError` carries GoTo's `error_code`/`detail`/`reference` (e.g. `403 UNAUTHORIZED - Forbidden access to phone number …`), live-verified through ha-goto 2.0.4. Voice unchanged since 0.3.1: G.722 + SDP negotiation, pre-encode during ring, 0.3 s tail silence.
+Live: v0.5.0 (2026-11-24) — `aiogotoconnect.sms` (goto-sms for Python: setup page, send, inbound, opt-outs) and calls to the sending number as events (`watch_calls=True`, `on("call")`); 0.4.0 was never published alone. Messaging and voice unchanged since 0.3.2.
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.

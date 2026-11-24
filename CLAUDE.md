@@ -1,6 +1,6 @@
 # aiogotoconnect
 
-Live: v0.5.0 (2026-11-24) — `aiogotoconnect.sms` (goto-sms for Python: setup page, send, inbound, opt-outs) and calls to the sending number as events (`watch_calls=True`, `on("call")`); 0.4.0 was never published alone. Messaging and voice unchanged since 0.3.2.
+Live: v0.5.1 (2026-11-24) — setup page from goto-sms v0.3.0 (Calls line); `aiogotoconnect.sms` (goto-sms for Python: setup page, send, inbound, opt-outs) and calls to the sending number as events (`watch_calls=True`, `on("call")`); 0.4.0 was never published alone. Messaging and voice unchanged since 0.3.2.
 
 ## What This Is
 Async Python client for GoTo Connect: SMS via Messaging v2 and outbound TTS voice calls via SIP. Consumed by the ha-goto Home Assistant integration.
@@ -28,7 +28,7 @@ Secrets (SIP device + OAuth client for live smoke tests): Infisical `home` proje
 ## Key Files
 `src/aiogotoconnect/`: `auth.py` (GoToOAuth, TokenProvider), `messaging.py` (GoToMessaging), `exceptions.py`, `sip/messages.py` (builders, digest), `sip/transport.py` (UDP/TLS), `sip/audio.py` (WAV -> G.711/G.722 payload), `sip/g722.py` (pure-Python G.722 encoder; decoder is test-only), `sip/rtp.py` (RtpSender), `sip/call.py` (GoToVoice, CallResult).
 
-`src/aiogotoconnect/sms/` (one module per goto-sms Node file): `client.py` (`create_goto_sms`, `GoToSms` lifecycle), `core.py` (resolved options, `AuthorizeRequest`), `oauth.py`, `directory.py`, `send.py`, `optouts.py`, `log.py`, `secrets.py` (AES-GCM), `inbound/` (`webhook.py`, `poller.py`, `processor.py`, `keywords.py`, `calls.py` = `watch_calls` / `on("call")`, Python-only so far), `server/` (`handlers.py` framework-free, `asgi.py` adapter, `status.py`), `store/` (file, memory, sqlite, `conformance.py` shared store tests), `setup/` (vendored page + `SETUP_UI_VERSION`), `testing.py`. Also `docs/conformance.md`, `examples/fastapi-app/`, `e2e/`, `scripts/update-setup-page.sh`.
+`src/aiogotoconnect/sms/` (one module per goto-sms Node file): `client.py` (`create_goto_sms`, `GoToSms` lifecycle), `core.py` (resolved options, `AuthorizeRequest`), `oauth.py`, `directory.py`, `send.py`, `optouts.py`, `log.py`, `secrets.py` (AES-GCM), `inbound/` (`webhook.py`, `poller.py`, `processor.py`, `keywords.py`, `calls.py` = `watch_calls` / `on("call")`, Node has it since goto-sms 0.3.0), `server/` (`handlers.py` framework-free, `asgi.py` adapter, `status.py`), `store/` (file, memory, sqlite, `conformance.py` shared store tests), `setup/` (vendored page + `SETUP_UI_VERSION`), `testing.py`. Also `docs/conformance.md`, `examples/fastapi-app/`, `e2e/`, `scripts/update-setup-page.sh`.
 
 ## Gotchas
 - GoTo challenges with 407 (Proxy-Authenticate), not 401; 401 is handled too.

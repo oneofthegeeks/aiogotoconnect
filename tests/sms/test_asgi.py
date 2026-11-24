@@ -30,8 +30,8 @@ from .fake_goto import FakeGoTo
 from .helpers import connected_sms, recorder
 
 BASE = "https://app.example"
-# sha256 of index.html inside goto-sms-setup-ui-v0.2.1.zip (the goto-sms v0.2.1 release asset).
-SETUP_PAGE_SHA256 = "a9ebabe96d20dd122528410288554be7d450120d970740866ed6157d5c5148b7"
+# sha256 of index.html inside goto-sms-setup-ui-v0.3.0.zip (the goto-sms v0.3.0 release asset).
+SETUP_PAGE_SHA256 = "6e970ac51291e4cf817bf15041d7c10d67751ae216d7c3acc85c98c35151a502"
 NO_AUTH = (
     "goto-sms: pass authorize(req) to create_goto_sms "
     "(or allow_unauthenticated_setup=True in development)"
@@ -104,7 +104,7 @@ def test_setup_page_matches_pinned_release() -> None:
     page = files("aiogotoconnect.sms").joinpath("setup/index.html").read_bytes()
     assert hashlib.sha256(page).hexdigest() == SETUP_PAGE_SHA256
     version = files("aiogotoconnect.sms").joinpath("setup/SETUP_UI_VERSION").read_text()
-    assert version.strip() == "v0.2.1"
+    assert version.strip() == "v0.3.0"
     assert setup_html().encode("utf-8") == page
 
 
